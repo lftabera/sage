@@ -1,33 +1,27 @@
 """
 Hypercircles
 
-This is a set of different algorithms related to the reparametrization problem.
+This is a set of different algorithms related to the reparametrization
+problem and adds the class Hypercircle.
 
-This is a python script that adds some Hypercircle functionality to Sage.
-
-In order to use this module, you need at least to apply the patch:
+In order to use this module, it is advisable to apply the trac patch:
 
     - patch #8558 fast gcd for polynomials with number field coefficients.
 
-Other patches that are useful:
-
-    - patch #10255 faster polynomial multiplication.
-    - patch #10910 Avoid nfinit while factoring polynomials.
-
-
     TESTS:
-    
+
     The following is a subtle error that can happen if, for a parameter t,
     Phi(t) is attained by Phibeta on two parameters, tb and infinity. This test
     shows that the method woks in this case::
-    
+
+        sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
         sage: N = NumberField(x^2-2, 'a')
-        sage: QQx=QQ[x]
+        sage: QQx=QQ['x']
         sage: D = QQx.random_element(2)
         sage: x = QQx.gen()
         sage: C = [(x**2-2)*QQx.random_element(2)/D for i in range(2)]
         sage: a = N.gen()
-        sage: C = [simsim(f((a*x-a)/(x+1))) for f in C]
+        sage: C = [f((a*x-a)/(x+1)) for f in C]
         sage: H = Hypercircle(C)
         sage: H.parametrization()
         [(1/2*x^2 + 1/2)/x, (1/4*a*x^2 - 1/4*a)/x]
@@ -59,133 +53,125 @@ from sage.libs.ntl.ntl_ZZ_pEContext import ntl_ZZ_pEContext
 from sage.rings.arith import gcd, rational_reconstruction
 from sage.rings.qqbar import QQbar,AA
 
-#def __relative_polynomial():
-    #return AA['x']([1,0,1])
+#def relative_inverse(f,g):
+    #"""
+    #f and g are polynomials over an absolute number field N. g irreducible
+    #computes the inverse of the class of f in N[x]/g using a modular algorithm
 
-#def __relative_degree():
-    #return ZZ(2)
+    #TEST::
 
-#QQbar.relative_polynomial = __relative_polynomial
-#QQbar.relative_degree = __relative_degree
-
-def relative_inverse(f,g):
-    """
-    f and g are polynomials over an absolute number field N. g irreducible
-    computes the inverse of the class of f in N[x]/g using a modular algorithm
-    
-    TEST::
-
-        sage: N.<alpha> = NumberField(x^3-2*x+3)
-        sage: K.<t> = N[]
-        sage: f = K.random_element(10)
-        sage: g = K.random_element(11)
-        sage: h = relative_inverse(f,g)
-        sage: (f*h) % g
-        1
-    """
-    h1 = f.numerator()
-    h2 = g.numerator()
-    d1 = f.denominator()
-    d2 = g.denominator()
-    content_1 = gcd([ gcd(coeff.list()) for coeff in h1.list()])
-    content_2 = gcd([ gcd(coeff.list()) for coeff in h2.list()])
-    h1 = (~content_1) * h1
-    h2 = (~content_2) * h2
-    N = h1.base_ring()
-    K = h1.parent()
-    pol = ntl_ZZX(N.polynomial().numerator().list())
-    Npol = ZZ['x'](N.polynomial().numerator())
-    # leading_coefficient != 1 is not currently supported by Sage right now
-    # (06-2010) but the code should work even if the polynomial is not monic.
-    if N.polynomial().denominator() == 1 and N.polynomial().leading_coefficient() == 1:
-        # Use the denominator bound given by Langemyr, McCallum.
-        # Do not assume that the leading coefficient of the gcd is an integer.
-        # This is generally faster than the general bound.
-        Bound = Npol.discriminant()  # D in Encarnacion paper.
-        Bound = Bound * h1.leading_coefficient().polynomial() *\
-                h2.leading_coefficient().polynomial()
-        D = ntl_ZZX(Bound.list())
-        p = ZZ(3+min(2**255, (max(map(abs,Bound.list())).n()**(0.4)).floor())).next_prime(False)
-    else:
-        # Use the denominator bound given by Encarnacion.
-        Bound = Npol.discriminant()
-        f= Npol.resultant(ZZ['x'](h1.leading_coefficient().polynomial()))
-        g= Npol.resultant(ZZ['x'](h2.leading_coefficient().polynomial()))
-        D = ntl_ZZX([Bound * f.gcd(g)])
-        p = (ZZ(3+min(2**255, (max(map(abs,Bound.list())).n()**(0.4)).floor()))).next_prime(False)
-    h1d = int(h1.degree())
-    h2d = int(h2.degree())
-    cd = int(N.degree())
-    # Save each polynomial as a list of lists for faster coercion to ntl_ZZ_pEX.
-    h1ntl = [ i.list() for i in h1.list()]
-    h2ntl = [ i.list() for i in h2.list()]
-    # ss is a tuple containing: degree of the gcd, modular_gcd, modulus.
-    ss = (h1d + 1,)
-    # Whenever steps == nsteps, try a rational reconstruction of the gcd.
-    steps = ZZ(4)
-    nsteps = ZZ(0)
-    while True:
-        # We do not really need prime as long as the gcd success.
-        p = p.next_prime(False)
-        # Recreate modular context.
-        pol_p = ntl_ZZ_pX(pol, p)
-        if pol_p.degree() == cd:
-            c = ntl_ZZ_pEContext(pol_p)
-            h1c = ntl_ZZ_pEX(h1ntl, c)
-            h2c = ntl_ZZ_pEX(h2ntl, c)
-            Dc = ntl_ZZ_pEX([ntl_ZZ_pE(D, c)])
-            if h1c.degree() == h1d and h2c.degree() == h2d and Dc !=0:
-                # Compute residual gcd.
-                try:
-                    gcd_pEX, u, v = h1c.xgcd(h2c)
-                    gcd_pEX *= Dc
-                    u *= Dc
-                    #v *= Dc
-                except (RuntimeError, ArithmeticError):
-                    #RuntimeError if there is no gcd.
-                    #ArithmeticError is the prime divides Dc.
-                    gcd_pEX = ntl_ZZ_pEX([1],c).left_shift(h1d+3)
-                #if ss[0] < gcd_pEX.degree() discard this case.
-                if ss[0] > gcd_pEX.degree():
-                    #All previous primes where bad primes, we start over again.
-                    steps = ZZ(4)
-                    nsteps = ZZ(0)
-                    ss = gcd_pEX.degree(), gcd_pEX, p, u#, v
-                elif ss[0] == gcd_pEX.degree():
-                    #Success, apply chinese remainder to compute the residual of
-                    #the gcd on a larger modulus.
-                    steps +=1
-                    gcd_, c1, c2 = p.xgcd(ss[2])
-                    if gcd_<>1:
-                        raise ValueError
-                    m = ntl_ZZ_pContext(p*ss[2])
-                    c = ntl_ZZ_pEContext(ntl_ZZ_pX(pol, m))
-                    gcd_pEX = gcd_pEX.convert_to_pE(c)
-                    gcd_pEX_previous = ss[1].convert_to_pE(c)
-                    u = u.convert_to_pE(c)
-                    u_previous = ss[3].convert_to_pE(c)
-                    gcd_pEX = gcd_pEX * ntl_ZZ_pEX([c2*ss[2]],c) +\
-                          gcd_pEX_previous * ntl_ZZ_pEX([c1*p],c)
-                    u = u * ntl_ZZ_pEX([c2*ss[2]],c) +\
-                          u_previous * ntl_ZZ_pEX([c1*p],c)
-                    ss = ss[0], gcd_pEX, p * ss[2], u#, v
-                    if steps >= nsteps:
-                        # Try a rational reconstruction.
-                        steps = ZZ(0)
-                        nsteps += nsteps.n().sqrt().floor() + 1
-                        try:
-                            # check if we already have a monic gcd.
-                            lc = ntl_ZZ_pEX([~gcd_pEX.leading_coefficient()])
-                            gcd_pEX = gcd_pEX * lc
-                            u = u * lc
-                            G = gcd_pEX.lift_to_poly_QQ(K)
-                            U = u.lift_to_poly_QQ(K)*~content_1*d1
-                            if (h1 % G).is_zero() and (h2 % G).is_zero():
-                                if ((f*U - G) % g).is_zero():
-                                    return U
-                        except (ValueError,RuntimeError):
-                            # Rational reconstruction failed.
-                            pass
+        #sage: from sage.geometry.hypercircles.hypercircle import relative_inverse
+        #sage: N.<alpha> = NumberField(x^3-2*x+3)
+        #sage: K.<t> = N[]
+        #sage: f = K.random_element(10)
+        #sage: g = K.random_element(11)
+        #sage: h = relative_inverse(f,g)
+        #sage: (f*h) % g
+        #1
+    #"""
+    #h1 = f.numerator()
+    #h2 = g.numerator()
+    #d1 = f.denominator()
+    #d2 = g.denominator()
+    #content_1 = gcd([ gcd(coeff.list()) for coeff in h1.list()])
+    #content_2 = gcd([ gcd(coeff.list()) for coeff in h2.list()])
+    #h1 = (~content_1) * h1
+    #h2 = (~content_2) * h2
+    #N = h1.base_ring()
+    #K = h1.parent()
+    #pol = ntl_ZZX(N.polynomial().numerator().list())
+    #Npol = ZZ['x'](N.polynomial().numerator())
+    ## leading_coefficient != 1 is not currently supported by Sage right now
+    ## (06-2010) but the code should work even if the polynomial is not monic.
+    #if N.polynomial().denominator() == 1 and N.polynomial().leading_coefficient() == 1:
+        ## Use the denominator bound given by Langemyr, McCallum.
+        ## Do not assume that the leading coefficient of the gcd is an integer.
+        ## This is generally faster than the general bound.
+        #Bound = Npol.discriminant()  # D in Encarnacion paper.
+        #Bound = Bound * h1.leading_coefficient().polynomial() *\
+                #h2.leading_coefficient().polynomial()
+        #D = ntl_ZZX(Bound.list())
+        #p = ZZ(3+min(2**255, (max(map(abs,Bound.list())).n()**(0.4)).floor())).next_prime(False)
+    #else:
+        ## Use the denominator bound given by Encarnacion.
+        #Bound = Npol.discriminant()
+        #f= Npol.resultant(ZZ['x'](h1.leading_coefficient().polynomial()))
+        #g= Npol.resultant(ZZ['x'](h2.leading_coefficient().polynomial()))
+        #D = ntl_ZZX([Bound * f.gcd(g)])
+        #p = (ZZ(3+min(2**255, (max(map(abs,Bound.list())).n()**(0.4)).floor()))).next_prime(False)
+    #h1d = int(h1.degree())
+    #h2d = int(h2.degree())
+    #cd = int(N.degree())
+    ## Save each polynomial as a list of lists for faster coercion to ntl_ZZ_pEX.
+    #h1ntl = [ i.list() for i in h1.list()]
+    #h2ntl = [ i.list() for i in h2.list()]
+    ## ss is a tuple containing: degree of the gcd, modular_gcd, modulus.
+    #ss = (h1d + 1,)
+    ## Whenever steps == nsteps, try a rational reconstruction of the gcd.
+    #steps = ZZ(4)
+    #nsteps = ZZ(0)
+    #while True:
+        ## We do not really need prime as long as the gcd success.
+        #p = p.next_prime(False)
+        ## Recreate modular context.
+        #pol_p = ntl_ZZ_pX(pol, p)
+        #if pol_p.degree() == cd:
+            #c = ntl_ZZ_pEContext(pol_p)
+            #h1c = ntl_ZZ_pEX(h1ntl, c)
+            #h2c = ntl_ZZ_pEX(h2ntl, c)
+            #Dc = ntl_ZZ_pEX([ntl_ZZ_pE(D, c)])
+            #if h1c.degree() == h1d and h2c.degree() == h2d and Dc !=0:
+                ## Compute residual gcd.
+                #try:
+                    #gcd_pEX, u, v = h1c.xgcd(h2c)
+                    #gcd_pEX *= Dc
+                    #u *= Dc
+                    ##v *= Dc
+                #except (RuntimeError, ArithmeticError):
+                    ##RuntimeError if there is no gcd.
+                    ##ArithmeticError is the prime divides Dc.
+                    #gcd_pEX = ntl_ZZ_pEX([1],c).left_shift(h1d+3)
+                ##if ss[0] < gcd_pEX.degree() discard this case.
+                #if ss[0] > gcd_pEX.degree():
+                    ##All previous primes where bad primes, we start over again.
+                    #steps = ZZ(4)
+                    #nsteps = ZZ(0)
+                    #ss = gcd_pEX.degree(), gcd_pEX, p, u#, v
+                #elif ss[0] == gcd_pEX.degree():
+                    ##Success, apply chinese remainder to compute the residual of
+                    ##the gcd on a larger modulus.
+                    #steps +=1
+                    #gcd_, c1, c2 = p.xgcd(ss[2])
+                    #if gcd_<>1:
+                        #raise ValueError
+                    #m = ntl_ZZ_pContext(p*ss[2])
+                    #c = ntl_ZZ_pEContext(ntl_ZZ_pX(pol, m))
+                    #gcd_pEX = gcd_pEX.convert_to_pE(c)
+                    #gcd_pEX_previous = ss[1].convert_to_pE(c)
+                    #u = u.convert_to_pE(c)
+                    #u_previous = ss[3].convert_to_pE(c)
+                    #gcd_pEX = gcd_pEX * ntl_ZZ_pEX([c2*ss[2]],c) +\
+                          #gcd_pEX_previous * ntl_ZZ_pEX([c1*p],c)
+                    #u = u * ntl_ZZ_pEX([c2*ss[2]],c) +\
+                          #u_previous * ntl_ZZ_pEX([c1*p],c)
+                    #ss = ss[0], gcd_pEX, p * ss[2], u#, v
+                    #if steps >= nsteps:
+                        ## Try a rational reconstruction.
+                        #steps = ZZ(0)
+                        #nsteps += nsteps.n().sqrt().floor() + 1
+                        #try:
+                            ## check if we already have a monic gcd.
+                            #lc = ntl_ZZ_pEX([~gcd_pEX.leading_coefficient()])
+                            #gcd_pEX = gcd_pEX * lc
+                            #u = u * lc
+                            #G = gcd_pEX.lift_to_poly_QQ(K)
+                            #U = u.lift_to_poly_QQ(K)*~content_1*d1
+                            #if (h1 % G).is_zero() and (h2 % G).is_zero():
+                                #if ((f*U - G) % g).is_zero():
+                                    #return U
+                        #except (ValueError,RuntimeError):
+                            ## Rational reconstruction failed.
+                            #pass
 
 def parametrization_to_common_denominator(Phi):
     """
@@ -202,13 +188,14 @@ def parametrization_to_common_denominator(Phi):
 
     - ``Den``: a polynomial
 
-    The length of ``Num`` equals the length of ``Phi`` and ``Phi[i]`` = 
+    The length of ``Num`` equals the length of ``Phi`` and ``Phi[i]`` =
     ``Num[i]/Den``
 
     gcd of ``Num[0]``, ..., ``Num[-1]``, ``Den``  is 1
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import parametrization_to_common_denominator
         sage: K = QQ[x].fraction_field()
         sage: Phi = [K.random_element(3) for i in range(5)]
         sage: Num, Den = parametrization_to_common_denominator(Phi)
@@ -227,7 +214,7 @@ def parametrization_to_common_denominator(Phi):
 
 def my_inverse_big_absnfield(s):
     """
-    Algorithm to compute the inverse of an element over an absolute number 
+    Algorithm to compute the inverse of an element over an absolute number
     field. This is faster than current sage code for big number fields with big
     defining coefficients and big s, maybe due to flint faster xgcd.
 
@@ -241,6 +228,7 @@ def my_inverse_big_absnfield(s):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import my_inverse_big_absnfield
         sage: N = NumberField(x^7+1213451*x^4 -135156164614,'a')
         sage: c = 0
         sage: while c.is_zero(): c = N.random_element()
@@ -271,19 +259,20 @@ def simsim(f):
 
     OUTPUT:
 
-    - The unique representative of ``f`` such that  
+    - The unique representative of ``f`` such that
       f.denominator().leading_coefficient() = 1
 
     EXAMPLES::
 
-        sage: K.<x> = QQ[x]  
+        sage: from sage.geometry.hypercircles.hypercircle import simsim
+        sage: K.<x> = QQ[x]
         sage: f =  (3*x^2+1) /(3*x^3)
         sage: f
         (3*x^2 + 1)/(3*x^3)
         sage: simsim(f)
         (x^2 + 1/3)/x^3
-        sage: f = K.fraction_field().random_element(20,10**6,10)   
-        sage: f - simsim(f)                                     
+        sage: f = K.fraction_field().random_element(20,10**6,10)
+        sage: f - simsim(f)
         0
         sage: f = NumberField(x^4+2,'a')[x].fraction_field().random_element(10, 10,10)
         sage: g = simsim(f)
@@ -312,14 +301,15 @@ def random_linear_fraction(K, n_bound = 100, d_bound = 1, reduced = False):
     A linear fraction ``u`` with monic denominator:
 
     - If reduced is true, ``witness([u])`` is a reduced hypercircle.
-    - If reduced is false, ``witness([u])`` is `NOT` a reduced hypercircle. 
+    - If reduced is false, ``witness([u])`` is `NOT` a reduced hypercircle.
       Moreover, the denominator is of degree 1.
 
-    .. warning:: Note that if the base_ring is of relative degree 1, reduced is     
+    .. warning:: Note that if the base_ring is of relative degree 1, reduced is
       ignored, since this does not make sense.
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import *
         sage: L.<t> = NumberField(x^3-2, 'a')[]
         sage: u = random_linear_fraction(L)
         sage: is_com_unit(u)
@@ -381,6 +371,7 @@ def is_com_unit(u):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import is_com_unit
         sage: K.<x> = QQ[]
         sage: u = (2*x+1)/(4*x+2)
         sage: is_com_unit(u)
@@ -427,6 +418,7 @@ def sums_alpha(Nu, De, alpha):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import *
         sage: N.<i> = NumberField(x^2+1)
         sage: K.<t> = N[]
         sage: Nu = [t^2 - i*t, -i*t^2 + 2*i*t]
@@ -451,7 +443,7 @@ def sums_alpha(Nu, De, alpha):
 def newton_sums(N):
     """
     Compute Newton sums of the generator of a NumberField
-    
+
     INPUT:
 
     - ``N``: a number fields of degree > 1
@@ -463,6 +455,7 @@ def newton_sums(N):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import newton_sums
         sage: N=NumberField(x^3+x^2-1,'b')
         sage: newton_sums(N)
         [3, -1, 1]
@@ -501,6 +494,7 @@ def rel_trace(new_sums, element):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import rel_trace, newton_sums
         sage: N = NumberField([x^3-2,x^2+4], 'a,b')
         sage: nn = newton_sums(N)
         sage: r = N.random_element()
@@ -531,6 +525,7 @@ def composition_by_unit(Num, Den, unit, verbose=False):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import composition_by_unit, random_linear_fraction
         sage: N = NumberField(x^3-2,'a')
         sage: K.<t> = N[]
         sage: Num = [K.random_element(3) for i in range(7)]
@@ -555,7 +550,7 @@ def composition_by_unit(Num, Den, unit, verbose=False):
         A += [A[-1]*a]
         B += [B[-1]*b]
     precalc = [A[i] * B[m-i] for i in range(m+1)]
-    if verbose: print('precalc: ' + str(time()-tt))    
+    if verbose: print('precalc: ' + str(time()-tt))
     if verbose: tt = time()
     nuevonum = [sum([num[i]*precalc[i] for i in \
                range(num.degree()+1)],a.parent().zero()) for num in Num]
@@ -579,6 +574,7 @@ def inverse_unit(w, var = None):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import inverse_unit, random_linear_fraction
         sage: K.<a,b,c,d> = QQ['a,b,c,d']
         sage: L.<x> = K.fraction_field()['tr']
         sage: u = (a*x+b)/(c*x+d)
@@ -621,6 +617,7 @@ def is_hypercircle(Phi, tstar, verbose = False):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import *
         sage: N = NumberField(x^3-2, 'a')
         sage: K.<t> = N[]
         sage: u = random_linear_fraction(K)
@@ -707,6 +704,7 @@ def is_reduced_hypercircle(Phi, verbose = False):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import *
         sage: N = NumberField(x^3-2, 'a')
         sage: K.<t> = N[]
         sage: u = random_linear_fraction(K, reduced = True)
@@ -780,6 +778,7 @@ def is_hypercircle_unit_reduced_standar(Num, Den, K, t, a, d, verbose = False):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import is_hypercircle_unit_reduced_standar
         sage: N.<a> = QQ[I]
         sage: K.<t> = N[]
         sage: d = 2
@@ -852,6 +851,7 @@ def conjugate_pol(f, conjugation, K2):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import conjugate_pol
         sage: N.<I> = QQ[I]
         sage: conj = N.automorphisms()[1]
         sage: conj
@@ -926,6 +926,7 @@ def unitfrom3points(Map, T):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import unitfrom3points, is_com_unit
         sage: K.<i1, i2, i3, j1, j2, j3> = QQ[]
         sage: L.<t> = K.fraction_field()[]
         sage: M = [[i1, j1], [i2, j2], [i3, j3]]
@@ -989,6 +990,7 @@ def my_gcd(list_of_polys):
 
     EXAPLES::
 
+            sage: from sage.geometry.hypercircles.hypercircle import my_gcd
             sage: K.<x> = QQ[x]
             sage: f = [K.random_element() for i in range(5)]
             sage: gcd(f) - my_gcd(f)
@@ -1013,7 +1015,8 @@ def my_gcd(list_of_polys):
 def my_quo_rem(self, other):
     """
     TEST::
-    
+
+        sage: from sage.geometry.hypercircles.hypercircle import my_quo_rem
         sage: N = QQ[I]
         sage: K.<t> = N[]
         sage: f = K.random_element(10)
@@ -1022,7 +1025,7 @@ def my_quo_rem(self, other):
         True
     """
     P = self.parent()
-    if other.is_zero(): 
+    if other.is_zero():
         raise ZeroDivisionError, "other must be nonzero"
 
     # This is algorithm 3.1.1 in Cohen GTM 138
@@ -1056,6 +1059,7 @@ def my_lcm(list_of_polys):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import my_lcm
         sage: K.<x> = NumberField(x^3-2, 'a')[]
         sage: f = [K.random_element(3) for i in range(3)]
         sage: l = my_lcm(f)
@@ -1081,13 +1085,13 @@ def my_lcm(list_of_polys):
 
 def __witness_deg_2(Phi, check, name, verbose, n, K, N, t, alpha, polmin, Not_defined):
     """
-    
-    This is a special case of witness variety for degree 2 extensions. 
-    This function is for internal use only and should not be called directly. 
+
+    This is a special case of witness variety for degree 2 extensions.
+    This function is for internal use only and should not be called directly.
     Use witness instead.
-    
+
     INPUT:
-    
+
     - ``Phi``: The original parametrization.
     - ``check``: Boolean, compute a certificate of K-definability.
     - ``name``: A string with the name of the variable of the parametrization of
@@ -1101,17 +1105,18 @@ def __witness_deg_2(Phi, check, name, verbose, n, K, N, t, alpha, polmin, Not_de
     - ``alpha``: The generator of ``N``. It must be of degree 2.
     - ``polmin``: The minimal polynomial of alpha.
     - ``Not_defined``: The string 'The curve is not defined over the ground field'
-    
-    OUTPUT: 
-    
-    - The string 'The curve is not defined over the ground field' or the 
-    standard parametrization of a hypercircle. If ``check``=False there is a 
-    small probability that the answer is a parametrization but that the curve 
-    is not defined over the ground field. If ``check`` is True there cannot be 
+
+    OUTPUT:
+
+    - The string 'The curve is not defined over the ground field' or the
+    standard parametrization of a hypercircle. If ``check``=False there is a
+    small probability that the answer is a parametrization but that the curve
+    is not defined over the ground field. If ``check`` is True there cannot be
     such error.
-    
+
     TEST:
-    
+
+        sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
         sage: N = NumberField(x^2-2, 'a')
         sage: K = N['t']
         sage: t = K.gen()
@@ -1121,7 +1126,7 @@ def __witness_deg_2(Phi, check, name, verbose, n, K, N, t, alpha, polmin, Not_de
         sage: name = 'rr'
         sage: polmin = QQ['x'](x^2-2)
         sage: Not_defined = ''
-        sage: from sage.rings.Hypercircle import __witness_deg_2 as wit2
+        sage: from sage.geometry.hypercircles.hypercircle import __witness_deg_2 as wit2
         sage: W1 = wit2(Phi, False, name, False, n, K, N, t, alpha, polmin, Not_defined); W1
         [(1/2*rr^2 + 1/2)/rr, (1/4*a*rr^2 - 1/4*a)/rr]
         sage: H = Hypercircle(Phi, name='rr')
@@ -1147,7 +1152,7 @@ def __witness_deg_2(Phi, check, name, verbose, n, K, N, t, alpha, polmin, Not_de
         raise ValueError("the parametrization does not define a curve")
 
     #is the following correct?
-    bound_npoints = 3 
+    bound_npoints = 3
     #degree_denominator + max([foo.numerator().degree() for foo in Phi]) + 1
 
     if verbose: print('pre: ' + str(time()-tt))
@@ -1164,7 +1169,7 @@ def __witness_deg_2(Phi, check, name, verbose, n, K, N, t, alpha, polmin, Not_de
     Phibeta = [conjugate_pol(foo, conjugation, NT) for foo in Phi]
     tb = Phibeta[0].parent().gen()
 
-    try:            
+    try:
         punto_infinito = [foo(~tb)(0) for foo in Phibeta]
     except ZeroDivisionError:
         punto_infinito = None
@@ -1215,7 +1220,7 @@ def __witness_deg_2(Phi, check, name, verbose, n, K, N, t, alpha, polmin, Not_de
         counter_ndef = 0
 
         #There are two possibilities, check that Phi and Phibeta intersect
-        #in enugh points of that Phibeta(s) = Phi. Depending on the degree 
+        #in enugh points of that Phibeta(s) = Phi. Depending on the degree
         #of Phi and alpha, one can beat the other, wo we try a little bit of
         #each and decide later which one is preferable.
         #First, check at many points that the curves are the same.
@@ -1276,7 +1281,7 @@ def __witness_deg_2(Phi, check, name, verbose, n, K, N, t, alpha, polmin, Not_de
             if verbose: print('check def two: ' +str(time()-tt))
     if verbose: tt=time()
     # we now compute psi, which is quite explicit.
-    
+
     b = (T-s)/(alpha-beta)
     lc = b.denominator().leading_coefficient()
     b = (b.numerator()/lc)/(b.denominator()/lc)
@@ -1311,6 +1316,7 @@ def witness(Phi, check = True, name = 't', verbose = False):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import *
         sage: N.<a> = NumberField(x^3 - 2)
         sage: K.<t> = N[]
         sage: u = random_linear_fraction(K)
@@ -1379,14 +1385,14 @@ def witness(Phi, check = True, name = 't', verbose = False):
 
         sage: change = t + W2[1] * new_alpha
         sage: [simsim(p(change)) for p in NewPhi]
-        [(-t^2 + (1/6*new_gamma + 5/3)*t - 1/6*new_gamma - 1/6)/(t - 
-        1/12*new_gamma - 5/6), ((-1/6*new_gamma + 1/3)*t^2 + (1/3*new_gamma - 
+        [(-t^2 + (1/6*new_gamma + 5/3)*t - 1/6*new_gamma - 1/6)/(t -
+        1/12*new_gamma - 5/6), ((-1/6*new_gamma + 1/3)*t^2 + (1/3*new_gamma -
         5/3)*t - 1/6*new_gamma + 4/3)/(t - 1/12*new_gamma - 5/6)]
 
     The reparametrization is over ``QQ[new_gamma]``.
 
     Now an example not defined over K but over an strict intermediate field::
-    
+
         sage: x = var('x')
         sage: N = NumberField(x^4-2,'a')
         sage: a = N.gen()
@@ -1408,7 +1414,7 @@ def witness(Phi, check = True, name = 't', verbose = False):
         sage: Phi = [f(u) for f in Phi]
         sage: witness(Phi)
         ['N', 1, a^3, a^6]
-    
+
         sage: N = NumberField((x^7-1)/(x-1),'a')
         sage: a = N.gen()
         sage: K = N['t']
@@ -1462,7 +1468,7 @@ def witness(Phi, check = True, name = 't', verbose = False):
     #Better guess for K
     N_defined = True
     Not_defined = 'The curve is not defined over the ground field'
-    
+
     n = len(Phi)
     K = Sequence(Phi).universe()
     if K.is_field():
@@ -1502,7 +1508,7 @@ def witness(Phi, check = True, name = 't', verbose = False):
         raise ValueError("the parametrization does not define a curve")
 
     #is the following correct?
-    bound_npoints = 3 
+    bound_npoints = 3
     #degree_denominator + max([foo.numerator().degree() for foo in Phi]) + 1
 
     if verbose: print('pre: ' + str(time()-tt))
@@ -1532,8 +1538,8 @@ def witness(Phi, check = True, name = 't', verbose = False):
 
         Phibeta = [conjugate_pol(foo, conjugation, M[t]) for foo in Phi]
         tb = Phibeta[0].parent().gen()
-        
-        try:            
+
+        try:
             punto_infinito = [foo(~tb)(0) for foo in Phibeta]
         except ZeroDivisionError:
             punto_infinito = None
@@ -1545,9 +1551,9 @@ def witness(Phi, check = True, name = 't', verbose = False):
         #variable.
         pairs = []
         parameter = -1
-        
+
         if verbose: print("create context: " + str(time()-tt))
-        
+
         while len(pairs) < 3 and good_extension:
             parameter +=1
             if Den_in_M(parameter) != 0:
@@ -1585,14 +1591,14 @@ def witness(Phi, check = True, name = 't', verbose = False):
             #intersects in enough points. Enough has to be discussed.
 
             if verbose: tt = time()
-            
+
             Numphibeta, Denphibeta = \
                                   parametrization_to_common_denominator(Phibeta)
             #parameter = 2
             #counter_ndef = 0
 
             #There are two possibilities, check that Phi and Phibeta intersect
-            #in eough points of that Phibeta(s) = Phi. Depending on the degree 
+            #in eough points of that Phibeta(s) = Phi. Depending on the degree
             #of Phi and alpha, one can beat the other, so we try a little bit of
             #each and decide later which one is preferable.
             #First, check at many points that the curves are the same.
@@ -1620,7 +1626,7 @@ def witness(Phi, check = True, name = 't', verbose = False):
 
             #if verbose: print('time first try K-definability: ' + \
                               #str(counter_one))
-            
+
             counter_two = time()
             L = Phibeta[0](s)(M[t].gen())
             if L != Phi_in_M[0]:
@@ -1740,7 +1746,7 @@ def witness(Phi, check = True, name = 't', verbose = False):
             #M0 = matrix([f[0].vector() for f in Mat]) - identity_matrix(d)
             #M1 = matrix([f[i].vector() for f in Mat for i in range(1,nb)])
             #def_L = def_L + M0.rows() + M1.rows()
-            
+
     if not N_defined:
         if verbose: print Not_defined
         if verbose: tt = time()
@@ -1767,6 +1773,7 @@ def alpha_components(P):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import alpha_components, sums_alpha
         sage: N.<a> = QQ[2^(1/3)]
         sage: K.<x,y> = N['x,y']
         sage: f = K.random_element(5)
@@ -1779,7 +1786,7 @@ def alpha_components(P):
     TESTS::
 
         sage: K1=PolynomialRing(QQ[sqrt(2)], ('t','x','y'), order=TermOrder('degrevlex', 1) + TermOrder('degrevlex',2))
-        sage: t,x,y=K1.gens()                    
+        sage: t,x,y=K1.gens()
         sage: a=K1.base_ring().gen()
         sage: a**2
         2
@@ -1829,6 +1836,7 @@ def implicite_hc(Phi, name = 'Y', method = 'echelon', verbose = False):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import *
         sage: N.<I> = QQ[I]
         sage: K.<x> = N[]
         sage: u = (I*x-2)/(x+1+3*I)
@@ -1863,14 +1871,14 @@ def implicite_hc(Phi, name = 'Y', method = 'echelon', verbose = False):
         sage: H =  witness([u])
         sage: I = implicite_hc(H)
         sage: I
-        Ideal (Y0^2 - 2*Y2^2 - 1/2*Y0*Y4 - 5*Y2*Y4 + 13/2*Y4^2, Y1, Y3) of 
+        Ideal (Y0^2 - 2*Y2^2 - 1/2*Y0*Y4 - 5*Y2*Y4 + 13/2*Y4^2, Y1, Y3) of
         Multivariate Polynomial Ring in Y0, Y1, Y2, Y3, Y4 over Rational Field
 
     Another examples, where the linear part is not constant::
 
         sage: var('x')
         x
-        sage: N.<a> = NumberField(x^6 + 6*x^5 + 15*x^4 + 20*x^3 + 15*x^2 + 6*x - 1) 
+        sage: N.<a> = NumberField(x^6 + 6*x^5 + 15*x^4 + 20*x^3 + 15*x^2 + 6*x - 1)
         sage: K.<t> = N['t']
         sage: u = ((-a^3 - 3*a^2 - 3*a + 1)*t - 2*a^3 - 6*a^2 - 6*a - 1)/((13*a^3 + 39*a^2 + 39*a + 14)*t - 7*a^3 - 21*a^2 - 21*a - 11)
         sage: H = witness([u])
@@ -1976,6 +1984,7 @@ def unit_to_hc_sqrt(U, name = None, verbose = False):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import *
         sage: N.<I> = QQ[I]
         sage: K.<xul> = N[]
         sage: u = random_linear_fraction(K)
@@ -2059,12 +2068,13 @@ def rational_point_conic(Phi, parameter, verbose = False):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import rational_point_conic
         sage: N.<beta, alpha> = NumberField([x^2+23, x^3+2], 'beta, alpha')
         sage: K.<t> = N[]
         sage: conic = [(1/2*t^2 - 10/69*beta*t - 49/3)/(t - 10/69*beta - 20/3),         (-1/46*beta*t^2 + 20/69*beta*t - 49/69*beta)/(t - 10/69*beta - 20/3)]
         sage: t_odd = (-1/108*alpha^2 + 8/27*alpha + 19/54)*beta -         187/108*alpha^2 + 38/27*alpha + 421/54
         sage: conic[0](t_odd), conic[1](t_odd) # An odd point
-        (-187/108*alpha^2 + 38/27*alpha + 421/54, -1/108*alpha^2 + 8/27*alpha + 
+        (-187/108*alpha^2 + 38/27*alpha + 421/54, -1/108*alpha^2 + 8/27*alpha +
         19/54)
         sage: t0 = rational_point_conic(conic, t_odd)
         sage: t0
@@ -2074,7 +2084,7 @@ def rational_point_conic(Phi, parameter, verbose = False):
 
     TODO:
 
-    Do not ask the parameter to give an element in ``QQ[alpha]``. Needed if the 
+    Do not ask the parameter to give an element in ``QQ[alpha]``. Needed if the
     original curve is of odd degree but ``alpha`` is of even degree.
     """
     from sage.matrix.constructor import matrix
@@ -2087,7 +2097,7 @@ def rational_point_conic(Phi, parameter, verbose = False):
     Kalpha = Kbeta.base_ring()
     deg = Kbeta.base_ring().relative_degree()
 
-    #degree of second curve and curves of degree m passing thorugh the odd 
+    #degree of second curve and curves of degree m passing thorugh the odd
     #divisor.
     m = (deg + 1)/2
     tstring = str(Kbeta.gen())
@@ -2114,7 +2124,7 @@ def rational_point_conic(Phi, parameter, verbose = False):
         Q.set_row( i , (Q.row(i) /d))
 
     # pretty illegal, but I do not need chache
-    L = Q._rational_kernel_iml().transpose() 
+    L = Q._rational_kernel_iml().transpose()
     for i in range(L.nrows()):
         d = gcd(L.row(i))
         L.set_row( i , (L.row(i) /d))
@@ -2153,7 +2163,7 @@ def rational_point_conic(Phi, parameter, verbose = False):
 
     if verbose: print('choosing a small solution: ' + str(i) + ', '\
                       + str(time()-tt))
-    if verbose: tt = time()    
+    if verbose: tt = time()
 
     # intersect the small curve found with the conic. The intersection will be
     # the odd divisor plus a rational point.
@@ -2184,6 +2194,7 @@ def drop_beta(U):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import drop_beta
         sage: N = QQ[sqrt(2), sqrt(3)]
         sage: s2, s3 = N.gens()
         sage: K.<x> = N[]
@@ -2227,6 +2238,7 @@ def simplify_unit(U):
 
     EXAMPLES::
 
+        sage: from sage.geometry.hypercircles.hypercircle import *
         sage: K.<x> = QQ[I][]
         sage: I = QQ[I].gen()
         sage: u = (125*x+I) / (125*x-I)
@@ -2287,31 +2299,32 @@ class Hypercircle():
     """
     This is a class representing a hypercircle for a extension ``QQ`` in
     ``QQ(alpha)``
-    
+
     Accesing the elements of the Hypercircle are interpreting as accesing
     elements of the standard parametrization.
-    
+
     It is initialized by a proper parametrization of a curve ``C`` in
     ``QQ(alpha)`` represented by a list of rational functions.
     The hypercircle will be associated to the parametrization.
-    In particular, if one wants to compute the hypercircle generated by a unit 
+    In particular, if one wants to compute the hypercircle generated by a unit
     ``u``, one can call Hypercircle in the parametrization [inverse_unit(u)]
     defined by the inverse of ``u``.
-    
+
     While some features work if the ground field is different from ``QQ`` this
     is not assured to work.
-    
+
     INPUT:
-    
+
     - Phi: a list of rational functions in ``K(alpha)[t]`` representing
       the parametrization.
     - check (optional, default: True): check K-definability.
     - name: (optional) a name for the parameter of the parametrization of the
       hypercircle. By default it takes the variable of Phi.
     - verbose (optional, defaul: False) print verbose information.
-    
+
     EXAMPLES::
-    
+
+        sage: from sage.geometry.hypercircles.hypercircle import Hypercircle, random_linear_fraction
         sage: N.<I> = QQ[I]
         sage: K.<t> = N[]
         sage: u = t
@@ -2335,9 +2348,10 @@ class Hypercircle():
     def __init__(self, Phi, check = True, name = False, verbose = False):
         """
         Indirect doctest.
-        
+
         EXAMPLES::
-    
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N = QQ[I]
             sage: K.<t> = N[]
             sage: u = t
@@ -2370,9 +2384,9 @@ class Hypercircle():
         self.__polmin = polmin
         d = polmin.degree()
         self.__ambient_dimension = d
-        
+
         Not_defined = 'The curve is not defined over the ground field'
-        
+
         #The case that Phi is polynomial can make things not work
         Kf = K.fraction_field()
         Phi = [Kf(foo) for foo in Phi]
@@ -2383,19 +2397,20 @@ class Hypercircle():
             psi = unit_to_hc_sqrt(Phi[0], name, verbose)
         else:
             psi = witness(Phi, check, name, verbose)
-        
+
         if psi[0] == 'N':
             raise ValueError(Not_defined, psi)
-        
+
         self.__standar_parametrization = psi
         self.__t = psi[0].numerator().parent().gen()
-    
+
     def __repr__(self):
         """
         Return the representation of the hypercircle
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t>=N[]
             sage: u = 1/(t-a)
@@ -2408,9 +2423,10 @@ class Hypercircle():
     def K_alpha(self):
         """
         Return the number field K(alpha)
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t>=N[]
             sage: u = 1/(t-a)
@@ -2419,13 +2435,14 @@ class Hypercircle():
             True
         """
         return self.__Kalpha
-        
+
     def alpha(self):
         """
         Return the primitive element of the extension.
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t>=N[]
             sage: u = 1/(t-a)
@@ -2438,9 +2455,10 @@ class Hypercircle():
     def t(self):
         """
         Return the variable of the parametrization
-        
+
         EXAMPLES::
 
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<s>=N[]
             sage: u = 1/(s-a)
@@ -2456,9 +2474,10 @@ class Hypercircle():
     def K(self):
         """
         Return the base field K
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t>=N[]
             sage: u = 1/(t-a)
@@ -2467,13 +2486,14 @@ class Hypercircle():
             True
         """
         return self.__K
-    
+
     def ambient_dimension(self):
         """
         Return the ambient dimension of the hypercircles
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t>=N[]
             sage: u = 1/(t-a)
@@ -2482,28 +2502,30 @@ class Hypercircle():
             True
         """
         return self.__ambient_dimension
-        
+
     def polmin(self):
         """
         Return the minimal polynomial of alpha
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t>=N[]
             sage: u = 1/(t-a)
             sage: H=Hypercircle([u])
             sage: H.polmin()
             x^3 - 2
-        """ 
+        """
         return self.__polmin
-    
+
     def parametrization(self):
         """
         Return the standar parametrization of the hypercircle
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t>=N[]
             sage: u = 1/(t-a)
@@ -2512,13 +2534,14 @@ class Hypercircle():
             [t - a, 1, 0]
         """
         return self.standard_parametrization()
-        
+
     def __getitem__(self, i):
         """
         Return the i-th component of the standar parametrization
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t>=N[]
             sage: u = 1/(t-a)
@@ -2535,22 +2558,23 @@ class Hypercircle():
     def ideal(self, name = 'Y', method = 'echelon', verbose = False):
         """
         Return the implicit ideal of the hypercircle
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t>=N[]
             sage: u = (a*t+a)/(t-a)
             sage: H=Hypercircle([u])
             sage: I = H.ideal(); I
-            Ideal (Y0^2 - 2*Y1*Y2 + Y0*Y3 + 2*Y2*Y3, Y0*Y1 - 2*Y2^2, -Y1^2 + 
-            Y0*Y2 + Y1*Y3 + Y2*Y3) of Multivariate Polynomial Ring in Y0, Y1, 
+            Ideal (Y0^2 - 2*Y1*Y2 + Y0*Y3 + 2*Y2*Y3, Y0*Y1 - 2*Y2^2, -Y1^2 +
+            Y0*Y2 + Y1*Y3 + Y2*Y3) of Multivariate Polynomial Ring in Y0, Y1,
             Y2, Y3 over Rational Field
             sage: [foo(Y0=H[0],Y1=H[1],Y2=H[2],Y3=1) for foo in I.gens()]
             [0, 0, 0]
             sage: H.ideal(name='x')
-            Ideal (x0^2 - 2*x1*x2 + x0*x3 + 2*x2*x3, x0*x1 - 2*x2^2, -x1^2 + 
-            x0*x2 + x1*x3 + x2*x3) of Multivariate Polynomial Ring in x0, x1, 
+            Ideal (x0^2 - 2*x1*x2 + x0*x3 + 2*x2*x3, x0*x1 - 2*x2^2, -x1^2 +
+            x0*x2 + x1*x3 + x2*x3) of Multivariate Polynomial Ring in x0, x1,
             x2, x3 over Rational Field
         """
         try:
@@ -2564,13 +2588,14 @@ class Hypercircle():
                            method = method, verbose = verbose)
             self.__ideal[name] = I
         return self.__ideal[name]
-    
+
     def degree(self):
         """
         Return the degree of the hypercircle
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t>=N[]
             sage: u = (a*t+a)/(t-a)
@@ -2586,13 +2611,14 @@ class Hypercircle():
         while self[i].numerator().degree() < 1:
             i += 1
         return self[i].numerator().degree()
-    
+
     def is_primitive(self):
         """
         Check if the hypercircle is primitive
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t>=N[]
             sage: u = (a*t+a)/(t-a)
@@ -2605,13 +2631,14 @@ class Hypercircle():
             False
         """
         return self.degree() == self.ambient_dimension()
-    
+
     def is_line(self):
-        """    
+        """
         Return wether the hypercircle is a line or not.
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t>=N[]
             sage: u = (a*t+a)/(t-a)
@@ -2627,9 +2654,10 @@ class Hypercircle():
     def unit(self):
         """
         Return an associated unit
-        
+
         EXAMPLES::
-            
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle, simsim
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t>=N[]
             sage: u = (a*t+a)/(t-a)
@@ -2641,25 +2669,26 @@ class Hypercircle():
             sage: H.compute_associated_unit(0)
             (-a^2 + a + 2)/(t + a^2 - a)
             sage: [simsim(P(H.unit())) for P in H]
-            [(2*t^2 - 4*t + 2)/(t^3 + 6*t + 2), (t^2 + 4*t + 4)/(t^3 + 6*t + 2), 
+            [(2*t^2 - 4*t + 2)/(t^3 + 6*t + 2), (t^2 + 4*t + 4)/(t^3 + 6*t + 2),
             (-t^2 - t + 2)/(t^3 + 6*t + 2)]
         """
         try:
             return self.__unit
         except(AttributeError):
             raise ValueError('Associated unit not yet discovered')
-    
+
     def set_unit(self, unit, check = True, simplify = False):
         """
-        Declare an associated unit to the hypercircle. If check is True, compute 
+        Declare an associated unit to the hypercircle. If check is True, compute
         also an associated rational parametrization and cache it. If simplify is
         True, an equivalent unit with possibly smaller coefficients will be used instead.
-        
-        As a side effect, it will change the internal unit and, as a side effect 
+
+        As a side effect, it will change the internal unit and, as a side effect
         if check = True, change the internar rational parametrization.
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle, inverse_unit
             sage: N.<a> = NumberField(x^3-2)
             sage: K.<t> = N[]
             sage: u = (t+a)/(t-a)
@@ -2684,24 +2713,25 @@ class Hypercircle():
             rep = map(drop_beta, rep)
             self.__rational_parametrization = rep
         self.__unit = unit
-        
+
     def rational_parametrization(self):
         """
-        Return a rational parametrization if precomputed or if we already have 
+        Return a rational parametrization if precomputed or if we already have
         a unit. See also compute_rational_parametrization. The result is cached
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle, inverse_unit
             sage: N.<a> = NumberField(x^4+3)
             sage: K.<t> = N[]
             sage: u = ((2*a+a**3)*t+1)/((1-a)*t-2*a)
             sage: H = Hypercircle([u])
             sage: H.set_unit(inverse_unit(u))
             sage: H.rational_parametrization()
-            [(-3/2*t^4 - 41/4*t^3 - 21*t^2 - 18*t)/(t^4 + 9*t^3 + 57/2*t^2 + 
-            42*t + 147/4), (1/2*t^4 + 13/4*t^3 + 29/4*t^2 + 3*t + 21/4)/(t^4 + 
-            9*t^3 + 57/2*t^2 + 42*t + 147/4), (1/2*t^4 + 11/4*t^3 + 7*t^2 + 
-            43/4*t)/(t^4 + 9*t^3 + 57/2*t^2 + 42*t + 147/4), (1/2*t^4 + 9/4*t^3 
+            [(-3/2*t^4 - 41/4*t^3 - 21*t^2 - 18*t)/(t^4 + 9*t^3 + 57/2*t^2 +
+            42*t + 147/4), (1/2*t^4 + 13/4*t^3 + 29/4*t^2 + 3*t + 21/4)/(t^4 +
+            9*t^3 + 57/2*t^2 + 42*t + 147/4), (1/2*t^4 + 11/4*t^3 + 7*t^2 +
+            43/4*t)/(t^4 + 9*t^3 + 57/2*t^2 + 42*t + 147/4), (1/2*t^4 + 9/4*t^3
             + 9/4*t^2 + 15/4*t + 7/2)/(t^4 + 9*t^3 + 57/2*t^2 + 42*t + 147/4)]
         """
         try:
@@ -2712,13 +2742,14 @@ class Hypercircle():
             rep = map(drop_beta, rep)
             self.__rational_parametrization = rep
             return rep
-    
+
     def standard_parametrization(self):
         """
         Returns the standard parametrization of the hypercircle.
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3+2*x+5)
             sage: K.<t>=N[]
             sage: u = 1/(t-a**3)
@@ -2727,15 +2758,16 @@ class Hypercircle():
             [t + 2*a, -2, 0]
         """
         return self.__standar_parametrization
-    
+
     def compute_associated_unit(self, t0, verbose = False):
         """
         Compute an associated unit of the hypercircle from t0 where t0 is either
         a parameter that gives a rational point or a list or coordinates of a
         rational point.
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3+2*x+5)
             sage: K.<t>=N[]
             sage: u= (t+a)/(t-a)
@@ -2754,7 +2786,7 @@ class Hypercircle():
 
             sage: N.<a> = NumberField(x^4-2)
             sage: K.<t> = N[]
-            
+
             False
         """
         if self.is_line():
@@ -2777,20 +2809,20 @@ class Hypercircle():
         parameter = - gcd(point)[0]
         self.compute_associated_unit(parameter, verbose)
         return self.unit()
-    
+
     def compute_small_place(self, beta_name = 'beta', gamma_name ='gamma', verbose = False, discriminant_bound = 10^6):
         """
         Compute a place of degree 1 or 2 of the hypercircle.
-        
+
         Note that, since the method uses LLL to basis reduction, it only works
         for absolute number fields. In particular, the hypercircle must be
         defined over QQ.
 
-        The method tries to help with the hell of number fields. If we start with a     
-        number field ``QQ[alpha]``. It will compute a field ``QQ[beta]`` such that     
-        the hypercircle has points in ``QQ[beta]``. These structures are     
-        incompatible, so it also computes a new field ``QQ[gamma] = QQ[alpha,beta]``     
-        as well as relative representations ``QQ[alpha][beta]``, ``QQ[beta][alpha]``     
+        The method tries to help with the hell of number fields. If we start with a
+        number field ``QQ[alpha]``. It will compute a field ``QQ[beta]`` such that
+        the hypercircle has points in ``QQ[beta]``. These structures are
+        incompatible, so it also computes a new field ``QQ[gamma] = QQ[alpha,beta]``
+        as well as relative representations ``QQ[alpha][beta]``, ``QQ[beta][alpha]``
         and isomorphisms with ``QQ[gamma]``
 
         NOTE: With improvements in coercion, there may be some morphisms that
@@ -2811,38 +2843,38 @@ class Hypercircle():
         If the place is of degree 1, a dictionary with the following keys:
 
         - ``degree_place``: 1
-        - ``parameter_to_QQ``: a parameter that gives a rational point in the         
+        - ``parameter_to_QQ``: a parameter that gives a rational point in the
           hypercircle.
-        - ``rational_point_witness``: the rational point in the hypercircle         
+        - ``rational_point_witness``: the rational point in the hypercircle
           obtained.
         - ``W_D``: A basis of the space of quadrics W_D
 
         If the place is of degree 2, a dictionary with the following keys:
 
         - ``K_alpha_beta``: The field ``QQ[alpha][beta]``
-        - ``K_alpha_beta_to_NewK``: isormporphism from ``QQ[alpha][beta]`` to         
+        - ``K_alpha_beta_to_NewK``: isormporphism from ``QQ[alpha][beta]`` to
           ``QQ[gamma]``
         - ``K_alpha_to_NewK``: morphism from ``QQ[alpha]`` to ``QQ[gamma]``
         - ``K_beta``: ``QQ[beta]``
         - ``K_beta_alpha``: The field ``QQ[beta][alpha]``
-        - ``K_beta_alpha_to_NewK``: isomorphism from ``QQ[beta][alpha]`` to         
+        - ``K_beta_alpha_to_NewK``: isomorphism from ``QQ[beta][alpha]`` to
           ``QQ[gamma]``
         - ``K_beta_to_NewK``: morphism from ``QQ[beta]`` to ``QQ[gamma]``
         - ``NewK``: ``the field QQ[alpha, beta]=QQ[gamma]``
-        - ``NewK_to_K_alpha_beta``: isomorphism from ``QQ[gamma]`` to         
+        - ``NewK_to_K_alpha_beta``: isomorphism from ``QQ[gamma]`` to
           ``QQ[alpha][beta]``
-        - ``NewK_to_K_beta_alpha``: isomorphism from ``QQ[gamma]`` to         
-          ``QQ[beta][alpha]`` 
+        - ``NewK_to_K_beta_alpha``: isomorphism from ``QQ[gamma]`` to
+          ``QQ[beta][alpha]``
         - ``beta``: quadratic element
         - ``degree_place``: 2
         - ``gamma``: primitive element of ``QQ[alpha][beta]``
-        - ``parameter_to_beta_in_K_beta_alpha``: element in ``QQ[beta][alpha]``         
+        - ``parameter_to_beta_in_K_beta_alpha``: element in ``QQ[beta][alpha]``
           that provides a point over ``QQ[beta]``
         - ``parameter_to_beta_in_NewK``: the same elemnt but in ``QQ[gamma]``
         - ``point_beta_in_K_beta_alpha``: a place of degree 1 or 2 in as a point
           in ``QQ[beta]``
         - ``point_beta_in_NewK``: the same point but in ``QQ[gamma]``
-        - ``witness_in_K_beta_alpha``: The standar parametrization of the         
+        - ``witness_in_K_beta_alpha``: The standar parametrization of the
           hypercircle with coefficients in ``QQ[beta][alpha]``.
         - ``witness_in_NewK``: The standar parametrization of the hypercircle
           with coefficients in ``QQ[gamma]``.
@@ -2852,6 +2884,7 @@ class Hypercircle():
 
         This used to fail::
 
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle, random_linear_fraction
             sage: var('x')
             x
             sage: N.<alpha> = NumberField(x^3-2,'alpha')[x]
@@ -2871,11 +2904,11 @@ class Hypercircle():
             sage: w.compute_small_place()
             sage: P = w._small_place_structure()
             sage: sorted(P.keys())
-            ['K_alpha_beta', 'K_alpha_beta_to_NewK', 'K_alpha_to_NewK', 'K_beta', 
-            'K_beta_alpha', 'K_beta_alpha_to_NewK', 'K_beta_to_NewK', 'NewK', 
-            'NewK_to_K_alpha_beta', 'NewK_to_K_beta_alpha', 'W_D', 'beta', 
-            'degree_place', 'gamma', 'parameter_to_beta_in_K_beta_alpha', 
-            'parameter_to_beta_in_NewK', 'point_beta_in_K_beta_alpha', 
+            ['K_alpha_beta', 'K_alpha_beta_to_NewK', 'K_alpha_to_NewK', 'K_beta',
+            'K_beta_alpha', 'K_beta_alpha_to_NewK', 'K_beta_to_NewK', 'NewK',
+            'NewK_to_K_alpha_beta', 'NewK_to_K_beta_alpha', 'W_D', 'beta',
+            'degree_place', 'gamma', 'parameter_to_beta_in_K_beta_alpha',
+            'parameter_to_beta_in_NewK', 'point_beta_in_K_beta_alpha',
             'point_beta_in_NewK', 'witness_in_K_beta_alpha', 'witness_in_NewK']
             sage: len(P['point_beta_in_K_beta_alpha'])
             3
@@ -2894,7 +2927,7 @@ class Hypercircle():
             False
             sage: str(beta) in str(point_beta)
             True
-    
+
         Rational points can be found during the process::
 
             sage: var('x')
@@ -2905,7 +2938,7 @@ class Hypercircle():
             sage: H = Hypercircle([u])
             sage: H.compute_small_place()
             sage: P = H._small_place_structure()
-            sage: P['degree_place']          
+            sage: P['degree_place']
             1
             sage: P['rational_point_witness']
             [0, 0, 0]
@@ -2919,15 +2952,15 @@ class Hypercircle():
             sage: u = (a*t - a^2 + 1)/(t - a)
             sage: H = Hypercircle([u])
             sage: H(0)
-            [70/433*a^2 - 145/433*a + 22/433, 13/433*a^2 + 4/433*a + 301/433, 
+            [70/433*a^2 - 145/433*a + 22/433, 13/433*a^2 + 4/433*a + 301/433,
             -78/433*a^2 - 24/433*a - 74/433]
             sage: H.compute_small_place()
             sage: P = H._small_place_structure()
-            sage: P['degree_place']          
+            sage: P['degree_place']
             1
             sage: P['rational_point_witness']
             [0, 1, 0]
-    
+
         TEST:
 
         This used to fail::
@@ -2939,9 +2972,9 @@ class Hypercircle():
             sage: u = (a*x-(a**2+1))/((4-a**2)*x+(a**2+3))
             sage: S = Hypercircle([u])
             sage: S.compute_small_place()
-    
+
         EXAMPLES::
-        
+
             sage: var('x')
             x
             sage: N.<a> = NumberField(x^3+2*x+5)
@@ -2970,7 +3003,7 @@ class Hypercircle():
             return
         except AttributeError:
             pass
-        
+
         from sage.matrix.constructor import matrix
         from sage.rings.number_field.number_field import QuadraticField
 
@@ -3005,7 +3038,7 @@ class Hypercircle():
             self.__place_structure = output
             return None
 
-            dx = dx.monic()    
+            dx = dx.monic()
 
         d = self.ambient_dimension()
         Kalpha = dx.base_ring()
@@ -3057,7 +3090,7 @@ class Hypercircle():
         total_equations += sum([p.list() for p in equation],[])
         if verbose: print("extract components: " + str(time()-tt))
         if verbose: tt = time()
-    
+
         if Set([p.degree() for p in total_equations if p != 0]) != Set([1]):
             raise ValueError("This should never happen, please report")
 
@@ -3068,7 +3101,7 @@ class Hypercircle():
         QQWt = K[KalphaWt.gens()]
         W = QQWt.gens()[1:]
         Q = matrix(K, len(total_equations), len(W), lambda x, y:\
-               total_equations[x].monomial_coefficient(W[y]) ) 
+               total_equations[x].monomial_coefficient(W[y]) )
 
         if verbose:
             print(W)
@@ -3080,7 +3113,7 @@ class Hypercircle():
         if verbose:
             print('base of quadrics:')
             print(L)
-            
+
         if K == QQ:
             L, _ = L._clear_denom()
             L = L.saturation().LLL()
@@ -3099,7 +3132,7 @@ class Hypercircle():
 
         # Tipically, the first cuadrics of L contain the whole hypercircle,
         # so we choose the first one that does not contain the hypercircle.
-    
+
         i = 0
         while L[i] * cuadric_vector == 0:
             i +=1
@@ -3230,7 +3263,7 @@ class Hypercircle():
 
         if verbose: print('beta and morphisms: ' + str(time()-tt))
         if verbose: tt = time()
-  
+
         #Take only one parameter
         if place2.is_squarefree():
             fv = [foo._pari_('a') for foo in place2]
@@ -3257,7 +3290,7 @@ class Hypercircle():
         if verbose: tt  = time()
 
         #compute the point in QQ[alpha][beta] and friends.
-    
+
         Num, Den = parametrization_to_common_denominator(self)
 
         if verbose: print('common denominator: '+ str(time()-tt))
@@ -3308,13 +3341,14 @@ class Hypercircle():
         #Cache the result
         self.__place_structure = output
         return None
-    
+
     def _small_place_structure(self):
         """
         Returns the dict computed by compute_small_place.
-        
+
         TEST:
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<x> = NumberField(x^3-2,'a')[x]
             sage: a = N.base_ring().gen()
             sage: u = ((34*a^2 + 44*a + 19)*x + 76*a^2 + 2*a + 27)/x
@@ -3331,14 +3365,15 @@ class Hypercircle():
         except(AttributeError):
             self.compute_small_place()
             return self.__place_structure
-    
+
     def small_place_degree(self):
         """
         Return the degree of a small place computed. The degree is garanteed to
         be 1 or 2.
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3+2*x+5)
             sage: K.<t>=N[]
             sage: u = ((a-1)*t+a+3)/(a**2*t-a)
@@ -3357,14 +3392,15 @@ class Hypercircle():
         except AttributeError:
             self.compute_small_place()
             return self.__place_structure['degree_place']
-    
+
     def small_place_parameter(self):
-        """    
+        """
         Return a parameter in ``QQ(beta, alpha)`` such that the image, by the
         parametrization, is in ``QQ(beta)``
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3+2*x+5)
             sage: K.<t>=N[]
             sage: u = ((a-1)*t+a+3)/(a**2*t-a)
@@ -3387,12 +3423,13 @@ class Hypercircle():
             return self.__place_structure['parameter_to_beta_in_K_beta_alpha']
 
     def small_place_coordinates(self):
-        """    
+        """
         Return a list representing the coordinates of a point in an extension of
         degree at most 2 over ``QQ``
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3+2*x+5)
             sage: K.<t>=N[]
             sage: u = ((a-1)*t+a+3)/(a**2*t-a)
@@ -3417,13 +3454,14 @@ class Hypercircle():
             return self.__place_structure['rational_point_witness']
         else:
             return self.__place_structure['point_beta_in_K_beta_alpha']
-    
+
     def small_place_beta(self):
-        """    
+        """
         Return the primitive element of ``QQ[beta]`` used to define this field.
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3+2*x+5)
             sage: K.<t>=N[]
             sage: u = ((a-1)*t+a+3)/(a**2*t-a)
@@ -3443,14 +3481,15 @@ class Hypercircle():
             return self.K().one()
         else:
             return self.__place_structure['beta']
-    
+
     def small_place_beta_minpoly(self):
-        """    
+        """
         Retuns the minimal polynomia of ``beta`` that is the defining polynomial
         of ``QQ[beta]``.
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3+2*x+5)
             sage: K.<t>=N[]
             sage: u = ((a-1)*t+a+3)/(a**2*t-a)
@@ -3463,14 +3502,15 @@ class Hypercircle():
             x - 1
         """
         return self.small_place_beta().minpoly('x')
-    
+
     def small_place_in_subfield(self):
         """
         Returns true is self.small_place_beta() defines a subfield of
         ``K[alpha]``
-        
+
         Examples::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle, random_linear_fraction, inverse_unit
             sage: N.<alpha>=NumberField(x^6-2*x^3-17,'alpha')
             sage: K.<t>=N[]
             sage: v = (-alpha^3*t + 1/3*alpha^3 - 1/3)/(-alpha*t + 1)
@@ -3490,16 +3530,17 @@ class Hypercircle():
             return True
         beta = self.small_place_beta()
         return not self.K_alpha()['t'](beta.minpoly()).is_irreducible()
-        
+
     def __call__(self, parameter):
         """
         Return the point corresponding to the parameter, including infinity.
-        
+
         Note: For the case of infinity, returns the projective coordinates.
         In the rest of cases, the affine coordinates.
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^3+2*x+5)
             sage: K.<t>=N[]
             sage: u = ((a-1)*t+a+3)/(a**2*t-a)
@@ -3508,31 +3549,31 @@ class Hypercircle():
             [-19587/144853*a^2 - 19980/144853*a - 92235/144853, -9825/144853*a^2
             + 42093/144853*a - 25899/144853, -1797/144853*a^2 - 8622/144853*a -
             26100/144853]
-        
+
         It also works if the parameter is in QQ[beta]
-        
+
             sage: H(H.small_place_beta())
-            [(1431634160101598779/63256860060562508708*beta + 
-            2558572756437300143/63256860060562508708)*a^2 + 
-            (-4937517254370458595/63256860060562508708*beta - 
-            8980475997848831195/63256860060562508708)*a + 
-            23728568183455667483/63256860060562508708*beta - 
-            2540328980120517785/63256860060562508708, 
-            (-988889281865605658/15814215015140627177*beta - 
-            211295714823944252/15814215015140627177)*a^2 + 
-            (-246029257868650955/31628430030281254354*beta - 
-            6398257988427999713/31628430030281254354)*a - 
-            2463832800094049575/31628430030281254354*beta - 
-            2725977802324770357/31628430030281254354, 
-            (1189226779256835749/63256860060562508708*beta - 
-            2683260002090032959/63256860060562508708)*a^2 + 
-            (-3950101247958945613/63256860060562508708*beta + 
-            337117063271673451/63256860060562508708)*a + 
-            1438877914149374629/63256860060562508708*beta + 
+            [(1431634160101598779/63256860060562508708*beta +
+            2558572756437300143/63256860060562508708)*a^2 +
+            (-4937517254370458595/63256860060562508708*beta -
+            8980475997848831195/63256860060562508708)*a +
+            23728568183455667483/63256860060562508708*beta -
+            2540328980120517785/63256860060562508708,
+            (-988889281865605658/15814215015140627177*beta -
+            211295714823944252/15814215015140627177)*a^2 +
+            (-246029257868650955/31628430030281254354*beta -
+            6398257988427999713/31628430030281254354)*a -
+            2463832800094049575/31628430030281254354*beta -
+            2725977802324770357/31628430030281254354,
+            (1189226779256835749/63256860060562508708*beta -
+            2683260002090032959/63256860060562508708)*a^2 +
+            (-3950101247958945613/63256860060562508708*beta +
+            337117063271673451/63256860060562508708)*a +
+            1438877914149374629/63256860060562508708*beta +
             4871423216238633365/63256860060562508708]
-        
+
         We can also compute the point at infinity::
-        
+
             sage: H(oo)
             [a^2 + 2, a, 1, 0]
             sage: var('x')
@@ -3541,10 +3582,11 @@ class Hypercircle():
             sage: N1.<a1> = NumberField(x^6+2,'a')
             sage: K1.<x1> = N1[]
             sage: u1 = 1/(x1+a1**2)
+            sage: from sage.geometry.hypercircles.hypercircle import inverse_unit
             sage: H1 = Hypercircle([inverse_unit(u1)])
             sage: H1(oo)
             [a1^4, 0, a1^2, 0, 1, 0, 0]
-            
+
         """
         if parameter == oo:
             Num, Den = parametrization_to_common_denominator(self(~self.t()))
@@ -3571,13 +3613,14 @@ class Hypercircle():
                 par = self.__place_structure['witness_in_NewK']
                 return [p(parameter) for p in par]
         return [p(parameter) for p in self.parametrization()]
-    
+
     def small_place_unit(self, verbose = False):
-        """    
+        """
         Return a unit that reparametrizes the hypercircle over ``QQ[beta]``.
-        
+
         EXAMPLES::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle, simsim
             sage: N.<a> = NumberField(x^3+2*x+5)
             sage: K.<t>=N[]
             sage: u = ((a-1)*t+a+3)/(a**2*t-a)
@@ -3603,16 +3646,16 @@ class Hypercircle():
             sage: v = [((59*a^2 + 21*a + 84)*t + 47*a^2 + 54*a + 54)/t]
             sage: H1 = Hypercircle(v)
             sage: vbeta = simsim(H1.small_place_unit()); vbeta
-            ((2255/26446*a^2 + 580/13223*a + 1735/26446)*t + 79827/26446*a^2 + 
-            20532/13223*a + 61419/26446)/(t - 45347/13223*a^2 + 17819/26446*a - 
+            ((2255/26446*a^2 + 580/13223*a + 1735/26446)*t + 79827/26446*a^2 +
+            20532/13223*a + 61419/26446)/(t - 45347/13223*a^2 + 17819/26446*a -
             3841/26446)
             sage: par_base_field = map(simsim, H1(vbeta)); par_base_field
-            [(1735/26446*t^3 + 144843/52892*t^2 + 974961/26446*t + 
-            41451453/52892)/(t^3 + 50179/3778*t^2 + 495569/52892*t - 
-            28845451/26446), (580/13223*t^3 + 23773/52892*t^2 - 574608/13223*t - 
-            8236341/52892)/(t^3 + 50179/3778*t^2 + 495569/52892*t - 
-            28845451/26446), (2255/26446*t^3 + 99807/26446*t^2 + 1303349/52892*t 
-            - 3937719/52892)/(t^3 + 50179/3778*t^2 + 495569/52892*t - 
+            [(1735/26446*t^3 + 144843/52892*t^2 + 974961/26446*t +
+            41451453/52892)/(t^3 + 50179/3778*t^2 + 495569/52892*t -
+            28845451/26446), (580/13223*t^3 + 23773/52892*t^2 - 574608/13223*t -
+            8236341/52892)/(t^3 + 50179/3778*t^2 + 495569/52892*t -
+            28845451/26446), (2255/26446*t^3 + 99807/26446*t^2 + 1303349/52892*t
+            - 3937719/52892)/(t^3 + 50179/3778*t^2 + 495569/52892*t -
             28845451/26446)]
             sage: sum([par_base_field[i] * a**i for i in range(3)]) == vbeta
             True
@@ -3621,11 +3664,11 @@ class Hypercircle():
             sage: H2 = Hypercircle([t])
             sage: w = H2.small_place_unit(); w
             t
-        
+
         The following example used to fail, It is a primitive hypercircle such
         that we find a point on a subfield of degree 2. Hence, it needs
         relativize::
-        
+
             sage: var('x')
             x
             sage: N.<alpha>=NumberField(x^6-2*x^3-17,'alpha')
@@ -3633,7 +3676,7 @@ class Hypercircle():
             sage: v = (-alpha^3*t + 1/3*alpha^3 - 1/3)/(-alpha*t + 1)
             sage: H = Hypercircle([v])
             sage: H.small_place_unit()
-            ((-36*beta + 114)*alpha^2 + (-51*beta + 306)*alpha + 867)/(t + 
+            ((-36*beta + 114)*alpha^2 + (-51*beta + 306)*alpha + 867)/(t +
             (-51*beta + 306)*alpha^2 + 867*alpha)
             sage: parbeta = map(simsim,H(H.small_place_unit()))
             sage: S = str(parbeta)
@@ -3642,20 +3685,20 @@ class Hypercircle():
             sage: 'alpha' in S
             False
             sage: parbeta[0]
-            ((136/699*beta + 323/699)*t^6 + (-169932/233*beta - 100572/233)*t^5 
-            + (-202469643/233*beta + 76760712/233)*t^4 + (224927147781/233*beta 
+            ((136/699*beta + 323/699)*t^6 + (-169932/233*beta - 100572/233)*t^5
+            + (-202469643/233*beta + 76760712/233)*t^4 + (224927147781/233*beta
             + 680118435243/233)*t^3 + (-310588970748192/233*beta -
             321170435162694/233)*t^2 + (81307917817026876/233*beta +
             107073950888577564/233)*t - 5484690082401920928/233*beta -
-            14990067970691614488/233)/(t^6 + (106488/233*beta + 359856/233)*t^5 
+            14990067970691614488/233)/(t^6 + (106488/233*beta + 359856/233)*t^5
             + (-1583088246/233*beta - 1056775896/233)*t^4 +
             (677541778002/233*beta + 1127117771766/233)*t^3 +
             (3177467265953376/233*beta + 5570316058860162/233)*t^2 +
             (-6201603752918368986/233*beta - 9890189581198153140/233)*t +
             3701691290153002346406/233*beta + 5448920353023639800187/233)
-        
+
         This used to fail::
-        
+
             sage: N.<alpha> = NumberField(x^4 - 26*x^2 + 49, 'alpha')
             sage: K.<t>  = N[]
             sage: Phi = [((-5/7*alpha^3 + 165/7*alpha)*t^3 + (45*alpha^3 + 15*alpha^2 + 315*alpha + 135)*t^2 + (31266/7*alpha^3 + 3150*alpha^2 - 44358/7*alpha - 4410)*t + 110952*alpha^3 + 116454*alpha^2 - 219996*alpha - 231556)/(25*t^4 + (-5/7*alpha^3 + 300*alpha^2 + 865/7*alpha)*t^3 + (945*alpha^3 + 35265*alpha^2 + 315*alpha - 65955)*t^2 + (523382/7*alpha^3 + 1719810*alpha^2 - 970146/7*alpha - 3488310)*t + 1811964*alpha^3 + 31409338*alpha^2 - 3674832*alpha - 64192860), (50*t^3 + (-15/14*alpha^3 + 450*alpha^2 + 2595/14*alpha)*t^2 + (945*alpha^3 + 35265*alpha^2 + 315*alpha - 66255)*t + 261706/7*alpha^3 + 859005*alpha^2 - 487668/7*alpha - 1744155)/(25*t^4 + (-5/7*alpha^3 + 300*alpha^2 + 865/7*alpha)*t^3 + (945*alpha^3 + 35265*alpha^2 + 315*alpha - 65955)*t^2 + (523382/7*alpha^3 + 1719810*alpha^2 - 970146/7*alpha - 3488310)*t + 1811964*alpha^3 + 31409338*alpha^2 - 3674832*alpha - 64192860)]
@@ -3665,14 +3708,14 @@ class Hypercircle():
             sage: H.small_place_beta_minpoly()
             x^2 + 2
             sage: H.small_place_unit()
-            ((3/2870*alpha^3 - 3*alpha^2 - 2969/2870*alpha - 61/41*beta)*t + 
-            (45/328*beta - 57/2870)*alpha^3 + (15/328*beta + 99/82)*alpha^2 + 
-            (315/328*beta + 1518/1435)*alpha + 357/328*beta)/(t + 
+            ((3/2870*alpha^3 - 3*alpha^2 - 2969/2870*alpha - 61/41*beta)*t +
+            (45/328*beta - 57/2870)*alpha^3 + (15/328*beta + 99/82)*alpha^2 +
+            (315/328*beta + 1518/1435)*alpha + 357/328*beta)/(t +
             15/2296*beta*alpha^3 - 495/2296*beta*alpha - 33/82)
             sage: map(simsim, H(H.small_place_unit()))
-            [(-61/41*beta*t^2 + 111/82*beta*t - 9/164*beta)/(t^2 - 33/41*t + 
-            27/82), (-2969/2870*t^2 + 3036/1435*t - 10611/11480)/(t^2 - 33/41*t 
-            + 27/82), -3, (3/2870*t^2 - 57/1435*t + 207/11480)/(t^2 - 33/41*t + 
+            [(-61/41*beta*t^2 + 111/82*beta*t - 9/164*beta)/(t^2 - 33/41*t +
+            27/82), (-2969/2870*t^2 + 3036/1435*t - 10611/11480)/(t^2 - 33/41*t
+            + 27/82), -3, (3/2870*t^2 - 57/1435*t + 207/11480)/(t^2 - 33/41*t +
             27/82)]
         """
         try:
@@ -3708,28 +3751,29 @@ class Hypercircle():
                 U = simplify_unit(U)
                 self.__small_place_unit = U
                 return U
-    
+
     def relativize(self, beta, name = 'beta'):
         """
         If beta is an algebraic integer of K_alpha, compute the hypercircle
         associated to K(beta) in K(alpha).
-        
+
         INPUT:
-        
+
         - ``beta``: and element of K_alpha
-        
+
         OUTPUT:
-        
+
         - ``(H, phi, mat)`` such that:
-        - ``H``: is the hypercircle of self associated to the extension K(beta) 
+        - ``H``: is the hypercircle of self associated to the extension K(beta)
           in K(alpha)
         - ``phi``: isomorphism from K(alpha) to K(beta)(alpha)
-        - ``mat`` a matrix such that if ``p`` is the coordinates of a point in 
-          self, ``mat*p`` is the corresponding point in ``H`` under the natural 
+        - ``mat`` a matrix such that if ``p`` is the coordinates of a point in
+          self, ``mat*p`` is the corresponding point in ``H`` under the natural
           isomorphism.
 
         EXAMPLES::
 
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N.<a> = NumberField(x^6 + 6*x^5 + 15*x^4 + 20*x^3 + 15*x^2 + 6*x - 1)
             sage: K.<t> = N['t']
             sage: u = (a*t+1)/(t-a)
@@ -3753,32 +3797,32 @@ class Hypercircle():
             3
             sage: phi
             Ring morphism:
-            From: Number Field in a with defining polynomial x^6 + 6*x^5 + 
+            From: Number Field in a with defining polynomial x^6 + 6*x^5 +
             15*x^4 + 20*x^3 + 15*x^2 + 6*x - 1
-            To:   Number Field in a with defining polynomial x^3 + 3*x^2 + 3*x - 
+            To:   Number Field in a with defining polynomial x^3 + 3*x^2 + 3*x -
             beta over its base field
             Defn: a |--> a
             sage: mat
-            [           1            0            0         beta      -3*beta       
+            [           1            0            0         beta      -3*beta
             6*beta]
-            [           0            1            0           -3     beta + 9 
+            [           0            1            0           -3     beta + 9
             -3*beta - 18]
-            [           0            0            1           -3            6     
+            [           0            0            1           -3            6
             beta - 9]
             sage: N2 = phi.codomain(); N2
-            Number Field in a with defining polynomial x^3 + 3*x^2 + 3*x - beta 
+            Number Field in a with defining polynomial x^3 + 3*x^2 + 3*x - beta
             over its base field
             sage: N.is_isomorphic(N2)
             True
-    
+
         Compute directly the hypercircle over the field N2::
-    
+
             sage: uu = N2[t].fraction_field()(u); uu
             (a*t + 1)/(t - a)
             sage: H3 = Hypercircle([uu])
             sage: H2.parametrization() == H3.parametrization()
             True
-        
+
         Check that the matrix mat is the isomorphism searched::
 
             sage: t0 = N.random_element()
@@ -3807,27 +3851,28 @@ class Hypercircle():
     def birational_conic(self, name = None):
         """
         Return the conic hypercircle associated to small_place_unit.
-        
+
         We have to be quite carful since since the ground field is ``QQ[alpha]``
         although the standard parametrization is over ``QQ[beta]``.
-        
+
         If the hypercircle is of degree 1 or the small place is of degree 1,
         then returns a line.
-        
-        If ``beta`` is not in ``QQ[alpha]`` then it computes the hypercircle 
+
+        If ``beta`` is not in ``QQ[alpha]`` then it computes the hypercircle
         from small_place_unit.
-        
+
         If ``beta`` is in ``QQ[alpha]`` it projects using relativize and then
         computes the conic from small_place_unit in the projection.
-        
+
         Warning::
             ``beta`` is ``QQ[alpha]`` not yet implemented.
-        
+
         The result is the conic hypercircle for the extension ``QQ`` in
         ``Q[beta]``.
 
         EXAMPLES::
 
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle, inverse_unit
             sage: N.<a> = NumberField(x^5 + 15*x^4 + 20*x^3 + 15*x^2 + 6*x - 1)
             sage: K.<t> = N['t']
             sage: u = (a*t+1)/(t-2*a)
@@ -3837,32 +3882,32 @@ class Hypercircle():
             sage: H1.small_place_degree()
             2
             sage: conic = H1.birational_conic(); conic
-            Hypercircle over Number Field in beta with defining polynomial 
+            Hypercircle over Number Field in beta with defining polynomial
             x^2 - 2883
             sage: conic.parametrization()
-            [(1/2*t^2 - 1776455701/1302*beta*t + 4529581007743677/2)/(t - 
-            1776455701/1302*beta - 28998415), (1/5766*beta*t^2 - 
-            28998415/2883*beta*t - 1509860335914559/1922*beta)/(t - 
+            [(1/2*t^2 - 1776455701/1302*beta*t + 4529581007743677/2)/(t -
+            1776455701/1302*beta - 28998415), (1/5766*beta*t^2 -
+            28998415/2883*beta*t - 1509860335914559/1922*beta)/(t -
                 1776455701/1302*beta - 28998415)]
             sage: conic.ideal('R')
             Ideal (R0^2 - 2883*R1^2 - 57996830*R0*R2 + 55070126731/7*R1*R2 -
             4529581007743677*R2^2) of Multivariate Polynomial Ring in R0, R1, R2
             over Rational Field
-        
+
         Note that, since N is of odd degree, we can easily define an odd divisor
         in the conic.::
 
             sage: odd = inverse_unit(H1.small_place_unit())(0);odd
-            (-1256591910/186889*beta + 644442070590/1308223)*a^4 + 
-            (-19357049580/186889*beta + 9863976192090/1308223)*a^3 + 
-            (-32933742355/186889*beta + 15916658306895/1308223)*a^2 + 
-            (-31764862315/186889*beta + 14651617450070/1308223)*a + 
+            (-1256591910/186889*beta + 644442070590/1308223)*a^4 +
+            (-19357049580/186889*beta + 9863976192090/1308223)*a^3 +
+            (-32933742355/186889*beta + 15916658306895/1308223)*a^2 +
+            (-31764862315/186889*beta + 14651617450070/1308223)*a +
             15728077502199/11587118*beta + 78287276434345/2616446
             sage: oddpoint = conic(odd); oddpoint
-            [644442070590/1308223*a^4 + 9863976192090/1308223*a^3 + 
-            15916658306895/1308223*a^2 + 14651617450070/1308223*a + 
-            78287276434345/2616446, -1256591910/186889*a^4 - 
-            19357049580/186889*a^3 - 32933742355/186889*a^2 - 
+            [644442070590/1308223*a^4 + 9863976192090/1308223*a^3 +
+            15916658306895/1308223*a^2 + 14651617450070/1308223*a +
+            78287276434345/2616446, -1256591910/186889*a^4 -
+            19357049580/186889*a^3 - 32933742355/186889*a^2 -
             31764862315/186889*a + 15728077502199/11587118]
             sage: pol0 = oddpoint[0].absolute_minpoly()
             sage: pol0.degree()
@@ -3872,9 +3917,9 @@ class Hypercircle():
             5
             sage: NumberField(pol0, 'g').is_isomorphic(NumberField(pol1, 'g'))
             True
-        
+
         An example where we have to relativize the hypercircle before computing the conic::
-        
+
             sage: var('x')
             x
             sage: N.<alpha>=NumberField(x^6-2*x^3-17,'alpha')
@@ -3882,32 +3927,32 @@ class Hypercircle():
             sage: u = (-alpha^3*t + 1/3*alpha^3 - 1/3)/(-alpha*t + 1)
             sage: H = Hypercircle([u])
             sage: v = H.small_place_unit(); v
-            ((-36*beta + 114)*alpha^2 + (-51*beta + 306)*alpha + 867)/(t + 
+            ((-36*beta + 114)*alpha^2 + (-51*beta + 306)*alpha + 867)/(t +
             (-51*beta + 306)*alpha^2 + 867*alpha)
             sage: len(H.small_place_beta_minpoly().roots(H.K_alpha()))
             2
-        
+
         beta is in K_alpha, so we cannot use v to compute the conic. Internally we
         use relativize, but this is transparent to the user, although probably
         slower::
-        
+
             sage: C = H.birational_conic(); C
-            Hypercircle over Number Field in beta with defining 
+            Hypercircle over Number Field in beta with defining
             polynomial x^2 - 2
             sage: par = inverse_unit(u(v))(0); par
             867/2*beta + 2601
             sage: C(par)
             [2601, 867/2]
-        
+
         Note that par is in QQ[beta][alpha]::
-        
+
             sage: w = C.compute_associated_unit(par[0]); w
             ((306*beta - 102)*t - 153*beta - 1683)/(t - beta + 8)
             sage: u(v(v.parent(w)))
             t + 8
-            
+
         Another example where beta is of degree one::
-        
+
             sage: N = NumberField(x^3+x+4, 'a')
             sage: K = N['t']
             sage: a = N.gen()
@@ -3923,7 +3968,7 @@ class Hypercircle():
             sage: C.ambient_dimension()
             1
         """
-           
+
         try:
             return self.__birational_conic
         except AttributeError:
@@ -3974,17 +4019,18 @@ class Hypercircle():
     def is_conic(self):
         """
         Check if the hypercircle is a conic.
-        
+
         TEST::
 
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle, random_linear_fraction, inverse_unit
             sage: N = QQ[I]
             sage: K = N['t']
-            sage: u = random_linear_fraction(K)
-            sage: H1 = Hypercircle([u])
+            sage: u1 = random_linear_fraction(K)
+            sage: H1 = Hypercircle([u1])
             sage: H1.is_conic()
             True
-            sage: u = random_linear_fraction(K, reduced=True)
-            sage: H2 = Hypercircle([inverse_unit(u)])
+            sage: u2 = random_linear_fraction(K, reduced=True)
+            sage: H2 = Hypercircle([inverse_unit(u2)])
             sage: H2.is_conic()
             False
         """
@@ -3993,21 +4039,22 @@ class Hypercircle():
     def compute_associated_unit_from_odd_divisor(self, divisor = 0, verbose = False):
         """
         Computes an associated unit from an odd divisor.
-        
+
         The hypercircle must be a plane conic or a line.
-        
+
         INPUT:
 
         - ``divisor``: The minimal polynomial of a parameter that defines a divisor of odd degree.
-        
+
         - ``verbose``: A boolean, if true print verbose information about the time of computation.
 
         OUTPUT:
 
         - An associated unit of the hypercircle.
-        
+
         TESTS::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import *
             sage: N = NumberField(x^3+2*x+4, 'a')
             sage: K = N['t']
             sage: u = random_linear_fraction(K)
@@ -4024,9 +4071,10 @@ class Hypercircle():
             sage: u1 = v(v.parent(w))
             sage: drop_beta(simsim(u(u1))) in QQ['t'].fraction_field()
             True
-        
+
         Another example in which the conic is a line because beta is in QQ::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: N = NumberField(x^3+x+4, 'a')
             sage: K = N['t']
             sage: a = N.gen()
@@ -4035,32 +4083,33 @@ class Hypercircle():
             sage: H = Hypercircle([u])
             sage: C = H.birational_conic(); C
             Hypercircle over Number Field in c with defining polynomial x
-        
+
         An explicit one::
-        
+
+            sage: from sage.geometry.hypercircles.hypercircle import Hypercircle
             sage: u = (2*a*t-a^2)/(t+a+2-a^2)
             sage: H = Hypercircle([u])
             sage: v = H.small_place_unit(); v
-            (((1/36*beta - 5/36)*a^2 + (1/9*beta - 1/18)*a - 1/36*beta - 
-            31/36)*t + (3190/9*beta - 30586/9)*a^2 + (11381/9*beta + 22357/9)*a 
-            - 540*beta - 24964/3)/(t + (790/3*beta + 566/3)*a^2 + (164/3*beta - 
+            (((1/36*beta - 5/36)*a^2 + (1/9*beta - 1/18)*a - 1/36*beta -
+            31/36)*t + (3190/9*beta - 30586/9)*a^2 + (11381/9*beta + 22357/9)*a
+            - 540*beta - 24964/3)/(t + (790/3*beta + 566/3)*a^2 + (164/3*beta -
             6812/3)*a + 1580/9*beta + 209356/9)
             sage: C = H.birational_conic()
             sage: par = inverse_unit(v)(0); par
-            (-10442/81*beta + 99926/81)*a^2 + (29872/81*beta - 172624/81)*a - 
+            (-10442/81*beta + 99926/81)*a^2 + (29872/81*beta - 172624/81)*a -
             44836/81*beta - 579140/81
             sage: C(par)
-            [99926/81*a^2 - 172624/81*a - 579140/81, -10442/81*a^2 + 29872/81*a 
+            [99926/81*a^2 - 172624/81*a - 579140/81, -10442/81*a^2 + 29872/81*a
             - 44836/81]
             sage: w = C.compute_associated_unit_from_odd_divisor(par.minpoly())
             sage: w
-            ((239552/99*beta + 657400/99)*t - 523552/99*beta - 504560/99)/(t - 
+            ((239552/99*beta + 657400/99)*t - 523552/99*beta - 504560/99)/(t -
             1/11*beta - 41/11)
             sage: u1 = simsim(v(v.parent(w))); u1
-            ((41402330111/282972916566*a^2 + 251048485799/282972916566*a - 
-            200797966037/282972916566)*t - 47061795353/141486458283*a^2 - 
-            344736433073/141486458283*a + 263070188339/141486458283)/(t - 
-            1248255360/15720717587*a^2 + 566134272/15720717587*a - 
+            ((41402330111/282972916566*a^2 + 251048485799/282972916566*a -
+            200797966037/282972916566)*t - 47061795353/141486458283*a^2 -
+            344736433073/141486458283*a + 263070188339/141486458283)/(t -
+            1248255360/15720717587*a^2 + 566134272/15720717587*a -
             48682972618/15720717587)
             sage: u1 = simplify_unit(u1); u1
             (1/2*a*t - 2*a^2 - 8*a + 2)/(t + a^2 - 7)
@@ -4074,9 +4123,9 @@ class Hypercircle():
             return self.__unit
         except(AttributeError):
             pass
-        
+
         #The unit is not computed
-        
+
         if self.is_line():
             if verbose: print('Hypercircle is a line:')
             u = self.compute_associated_unit(0)
@@ -4084,7 +4133,7 @@ class Hypercircle():
 
         if not self.is_conic() or self.ambient_dimension() != 2:
             raise ValueError("Only implemented for plane conics")
-        
+
         m = divisor.degree()
         if m % 2 == 0:
             raise ValueError('the divisor given is even')
@@ -4108,13 +4157,13 @@ class Hypercircle():
         PhiprojWt = map(KalphaWt, Phiproj)
         Equa = [[ KalphaWt(tstring+'W'+str(i)+'_'+str(j))*PhiprojWt[0]**i*PhiprojWt[1]**j*Phiproj[2]**(r-i-j)\
            for j in range(r+1-i)] for i in range(r+1)]
-           
+
         Equa = sum(Equa, [])
         Equa = sum(Equa)
         Equa_red = Equa.reduce([KalphaWt(divisor)])
         Equa = [Equa.coefficient({foo:1}) for foo in W]
         # It is a conic
-            
+
         Equa0, Equa1 = alpha_components(Equa_red)
         if verbose:
             print('computed equations: ' + str(time()-tt))
@@ -4124,18 +4173,18 @@ class Hypercircle():
         for i in range(r):
             p += [[Equa0.coefficient({t : i}).coefficient({foo:1}) for foo in W]]
             p += [[Equa1.coefficient({t : i}).coefficient({foo:1}) for foo in W]]
-                
+
         M = matrix(p)
         M = M.change_ring(QQ)
         if verbose:
             print('computed matrix: ' + str(time()-tt))
             tt = time()
-        
+
         N = M.right_kernel().basis_matrix()
         if verbose:
             print('computed kernel: ' + str(time()-tt))
             tt = time()
-            
+
         #N is immutable
         N = copy(N)
         for i in range(N.nrows()):
@@ -4169,7 +4218,7 @@ class Hypercircle():
         if verbose:
             print('computed parameter: ' + str(time()-tt))
             tt = time()
-    
+
         self.compute_associated_unit(parameter)
         if verbose:
             print('computed associated unit: ' + str(time()-tt))
