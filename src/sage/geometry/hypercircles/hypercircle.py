@@ -38,140 +38,11 @@ from sage.sets.set import Set
 from sage.rings.polynomial.all import is_Polynomial
 from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
 from sage.modules.free_module_element import vector
-from sage.rings.polynomial.polynomial_ring import polygens
 from sage.rings.number_field.number_field import NumberField
 from sage.structure.sequence import Sequence
 from sage.matrix.constructor import matrix, identity_matrix
 from sage.all import pari, oo
-from sage.misc.sage_timeit_class import timeit
-from sage.libs.ntl.ntl_ZZX import ntl_ZZX
-from sage.libs.ntl.ntl_ZZ_pEX import ntl_ZZ_pEX
-from sage.libs.ntl.ntl_ZZ_pContext import ntl_ZZ_pContext
-from sage.libs.ntl.ntl_ZZ_pX import ntl_ZZ_pX
-from sage.libs.ntl.ntl_ZZ_pE import ntl_ZZ_pE
-from sage.libs.ntl.ntl_ZZ_pEContext import ntl_ZZ_pEContext
-from sage.rings.arith import gcd, rational_reconstruction
-from sage.rings.qqbar import QQbar,AA
-
-#def relative_inverse(f,g):
-    #"""
-    #f and g are polynomials over an absolute number field N. g irreducible
-    #computes the inverse of the class of f in N[x]/g using a modular algorithm
-
-    #TEST::
-
-        #sage: from sage.geometry.hypercircles.hypercircle import relative_inverse
-        #sage: N.<alpha> = NumberField(x^3-2*x+3)
-        #sage: K.<t> = N[]
-        #sage: f = K.random_element(10)
-        #sage: g = K.random_element(11)
-        #sage: h = relative_inverse(f,g)
-        #sage: (f*h) % g
-        #1
-    #"""
-    #h1 = f.numerator()
-    #h2 = g.numerator()
-    #d1 = f.denominator()
-    #d2 = g.denominator()
-    #content_1 = gcd([ gcd(coeff.list()) for coeff in h1.list()])
-    #content_2 = gcd([ gcd(coeff.list()) for coeff in h2.list()])
-    #h1 = (~content_1) * h1
-    #h2 = (~content_2) * h2
-    #N = h1.base_ring()
-    #K = h1.parent()
-    #pol = ntl_ZZX(N.polynomial().numerator().list())
-    #Npol = ZZ['x'](N.polynomial().numerator())
-    ## leading_coefficient != 1 is not currently supported by Sage right now
-    ## (06-2010) but the code should work even if the polynomial is not monic.
-    #if N.polynomial().denominator() == 1 and N.polynomial().leading_coefficient() == 1:
-        ## Use the denominator bound given by Langemyr, McCallum.
-        ## Do not assume that the leading coefficient of the gcd is an integer.
-        ## This is generally faster than the general bound.
-        #Bound = Npol.discriminant()  # D in Encarnacion paper.
-        #Bound = Bound * h1.leading_coefficient().polynomial() *\
-                #h2.leading_coefficient().polynomial()
-        #D = ntl_ZZX(Bound.list())
-        #p = ZZ(3+min(2**255, (max(map(abs,Bound.list())).n()**(0.4)).floor())).next_prime(False)
-    #else:
-        ## Use the denominator bound given by Encarnacion.
-        #Bound = Npol.discriminant()
-        #f= Npol.resultant(ZZ['x'](h1.leading_coefficient().polynomial()))
-        #g= Npol.resultant(ZZ['x'](h2.leading_coefficient().polynomial()))
-        #D = ntl_ZZX([Bound * f.gcd(g)])
-        #p = (ZZ(3+min(2**255, (max(map(abs,Bound.list())).n()**(0.4)).floor()))).next_prime(False)
-    #h1d = int(h1.degree())
-    #h2d = int(h2.degree())
-    #cd = int(N.degree())
-    ## Save each polynomial as a list of lists for faster coercion to ntl_ZZ_pEX.
-    #h1ntl = [ i.list() for i in h1.list()]
-    #h2ntl = [ i.list() for i in h2.list()]
-    ## ss is a tuple containing: degree of the gcd, modular_gcd, modulus.
-    #ss = (h1d + 1,)
-    ## Whenever steps == nsteps, try a rational reconstruction of the gcd.
-    #steps = ZZ(4)
-    #nsteps = ZZ(0)
-    #while True:
-        ## We do not really need prime as long as the gcd success.
-        #p = p.next_prime(False)
-        ## Recreate modular context.
-        #pol_p = ntl_ZZ_pX(pol, p)
-        #if pol_p.degree() == cd:
-            #c = ntl_ZZ_pEContext(pol_p)
-            #h1c = ntl_ZZ_pEX(h1ntl, c)
-            #h2c = ntl_ZZ_pEX(h2ntl, c)
-            #Dc = ntl_ZZ_pEX([ntl_ZZ_pE(D, c)])
-            #if h1c.degree() == h1d and h2c.degree() == h2d and Dc !=0:
-                ## Compute residual gcd.
-                #try:
-                    #gcd_pEX, u, v = h1c.xgcd(h2c)
-                    #gcd_pEX *= Dc
-                    #u *= Dc
-                    ##v *= Dc
-                #except (RuntimeError, ArithmeticError):
-                    ##RuntimeError if there is no gcd.
-                    ##ArithmeticError is the prime divides Dc.
-                    #gcd_pEX = ntl_ZZ_pEX([1],c).left_shift(h1d+3)
-                ##if ss[0] < gcd_pEX.degree() discard this case.
-                #if ss[0] > gcd_pEX.degree():
-                    ##All previous primes where bad primes, we start over again.
-                    #steps = ZZ(4)
-                    #nsteps = ZZ(0)
-                    #ss = gcd_pEX.degree(), gcd_pEX, p, u#, v
-                #elif ss[0] == gcd_pEX.degree():
-                    ##Success, apply chinese remainder to compute the residual of
-                    ##the gcd on a larger modulus.
-                    #steps +=1
-                    #gcd_, c1, c2 = p.xgcd(ss[2])
-                    #if gcd_<>1:
-                        #raise ValueError
-                    #m = ntl_ZZ_pContext(p*ss[2])
-                    #c = ntl_ZZ_pEContext(ntl_ZZ_pX(pol, m))
-                    #gcd_pEX = gcd_pEX.convert_to_pE(c)
-                    #gcd_pEX_previous = ss[1].convert_to_pE(c)
-                    #u = u.convert_to_pE(c)
-                    #u_previous = ss[3].convert_to_pE(c)
-                    #gcd_pEX = gcd_pEX * ntl_ZZ_pEX([c2*ss[2]],c) +\
-                          #gcd_pEX_previous * ntl_ZZ_pEX([c1*p],c)
-                    #u = u * ntl_ZZ_pEX([c2*ss[2]],c) +\
-                          #u_previous * ntl_ZZ_pEX([c1*p],c)
-                    #ss = ss[0], gcd_pEX, p * ss[2], u#, v
-                    #if steps >= nsteps:
-                        ## Try a rational reconstruction.
-                        #steps = ZZ(0)
-                        #nsteps += nsteps.n().sqrt().floor() + 1
-                        #try:
-                            ## check if we already have a monic gcd.
-                            #lc = ntl_ZZ_pEX([~gcd_pEX.leading_coefficient()])
-                            #gcd_pEX = gcd_pEX * lc
-                            #u = u * lc
-                            #G = gcd_pEX.lift_to_poly_QQ(K)
-                            #U = u.lift_to_poly_QQ(K)*~content_1*d1
-                            #if (h1 % G).is_zero() and (h2 % G).is_zero():
-                                #if ((f*U - G) % g).is_zero():
-                                    #return U
-                        #except (ValueError,RuntimeError):
-                            ## Rational reconstruction failed.
-                            #pass
+from sage.rings.qqbar import QQbar
 
 def parametrization_to_common_denominator(Phi):
     """
@@ -391,8 +262,8 @@ def is_com_unit(u):
     """
     n = u.numerator()
     d = u.denominator()
-    S = Set([n.degree(), d.degree()])
-    return S == Set([0,1]) or S == Set([1])
+    S = (n.degree(), d.degree())
+    return S in [(1,1),(1,0),(0,1)]
 
 def sums_alpha(Nu, De, alpha):
     """
@@ -1528,7 +1399,7 @@ def witness(Phi, check = True, name = 't', verbose = False):
         N_to_M = N_to_Nb.post_compose(Nb_to_M)
         beta_in_M = Nb_to_M(beta)
         counter_ndef = 0
-        #This is ugly, but no idea to circunvent this
+        #This is ugly, but no idea how to circunvent this
 
         if N.is_absolute():
             conjugation = N.hom([beta_in_M])
