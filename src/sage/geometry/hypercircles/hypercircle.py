@@ -885,7 +885,10 @@ def my_gcd(list_of_polys):
 
 def my_quo_rem(self, other):
     """
-    TEST::
+
+    Custom quotient and remainder
+
+    TESTS::
 
         sage: from sage.geometry.hypercircles.hypercircle import my_quo_rem
         sage: N = QQ[I]
