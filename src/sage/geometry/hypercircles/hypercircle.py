@@ -4,7 +4,17 @@ Hypercircles
 This is a set of different algorithms related to the reparametrization
 problem and adds the class Hypercircle.
 
-In order to use this module, it is advisable to apply the trac patch:
+The git-aware user may use my github branch: https://github.com/lftabera/sage/tree/hypercircles
+
+You may also download directly the module from http://personales.unican.es/taberalf/Documentos/Hypercircle.zip, unzip it and load from your Sage session::
+
+    sage: load('hypercircle.py')
+    sage: u=random_linear_fraction(QQ[I]['t'])
+    sage: H=Hypercircle([u])
+
+In this case, ignore the import sentence of the examples and tests.
+
+In any case, it is advisable to run at lest Sage 6.1.1 and apply the trac patch:
 
     - patch #8558 fast gcd for polynomials with number field coefficients.
 
@@ -885,7 +895,6 @@ def my_gcd(list_of_polys):
 
 def my_quo_rem(self, other):
     """
-
     Custom quotient and remainder
 
     TESTS::
