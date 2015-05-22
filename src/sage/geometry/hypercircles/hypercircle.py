@@ -3128,6 +3128,8 @@ class Hypercircle():
                                                      var_string+'1', beta_name))
         K_beta_alpha = Kbeta.extension(pol_alpha_over_beta, str(alpha))
         K_beta_alpha.register_coercion( Kalpha.hom([K_beta_alpha.gen()]))
+        if K_beta_alpha.absolute_degree() == Kalpha.degree():
+            Kalpha.register_coercion(K_beta_alpha.hom([Kalpha.gen()]))
         gamma_in_alpha_beta = NewK_to_K_alpha_beta(gamma_name)
 
         #This is ugly!!
@@ -3721,11 +3723,9 @@ class Hypercircle():
         Kbeta_alpha = Kbeta.extension(p0, str(self.alpha()))
         alphab = Kbeta_alpha.gen()
         phi = self.K_alpha().hom([alphab])
-        #phibeta = Kbeta.hom([beta])
-        #psi = Kbeta_alpha.Hom(self.K_alpha())(self.alpha(), base_hom = phibeta)
-        #If beta is in Kalpha, this can be simplyfied
         par_in_Kbeta_alpha = map(lambda x: conjugate_pol(x, phi,\
                                  Kbeta_alpha[self.t()]), self.parametrization())
+        Kbeta_alpha.register_coercion(phi)
         m = [alphab**i for i in range(self.ambient_dimension())]
         m = map(lambda x: x.vector(), m)
         m = matrix(Kbeta_alpha, m).transpose()
