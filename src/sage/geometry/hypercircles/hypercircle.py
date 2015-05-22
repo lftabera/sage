@@ -8,9 +8,9 @@ The git-aware user may use my github branch: https://github.com/lftabera/sage/tr
 
 You may also download directly the module from http://personales.unican.es/taberalf/Documentos/Hypercircle.zip, unzip it and load from your Sage session::
 
-    sage: load('hypercircle.py')
-    sage: u=random_linear_fraction(QQ[I]['t'])
-    sage: H=Hypercircle([u])
+load('hypercircle.py')
+u=random_linear_fraction(QQ[I]['t'])
+H=Hypercircle([u])
 
 In this case, ignore the import sentence of the examples and tests.
 
@@ -45,7 +45,7 @@ from sage.rings.integer_ring import ZZ
 from sage.rings.rational_field import QQ
 from sage.rings.power_series_ring import PowerSeriesRing
 from sage.sets.set import Set
-from sage.rings.polynomial.all import is_Polynomial
+from sage.rings.polynomial.polynomial_element import is_Polynomial
 from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
 from sage.modules.free_module_element import vector
 from sage.rings.number_field.number_field import NumberField
@@ -775,14 +775,14 @@ def conjugate_pol(f, conjugation, K2):
         a^3*x^2 + x + a
         sage: p2 = conjugate_pol(p, conj2, M[x]); p2
         a^2*b*x^2 + x + 1/2*a^4*b^2
-        sage: sage.rings.polynomial.all.is_Polynomial(p1)
+        sage: sage.rings.polynomial.polynomial_element.is_Polynomial(p1)
         True
-        sage: sage.rings.polynomial.all.is_Polynomial(p2)
+        sage: sage.rings.polynomial.polynomial_element.is_Polynomial(p2)
         True
         sage: q = p / p.parent().one(); q
         a^3*x^2 + x + a
         sage: q1 = conjugate_pol(q, conj1, M[x])
-        sage: sage.rings.polynomial.all.is_Polynomial(q1)
+        sage: sage.rings.polynomial.polynomial_element.is_Polynomial(q1)
         False
     """
     if is_Polynomial(f):
@@ -917,7 +917,7 @@ def my_quo_rem(self, other):
     b = other.leading_coefficient()
     b = my_inverse_big_absnfield(b)
     R = A
-    Q = P.zero_element()
+    Q = P.zero()
     while R.degree() >= B.degree():
         aaa = R.leading_coefficient()*b
         diff_deg=R.degree()-B.degree()
@@ -1381,7 +1381,7 @@ def witness(Phi, check = True, name = 't', verbose = False):
     T = NT.gen()
 
     #start computing the hypercircle
-    psi = m.coeffs()
+    psi = m.coefficients(sparse=False)
     psi = [foo / diffpolmin(alpha) *T for foo in psi]
     Den = my_lcm([foo.denominator() for foo in Phi])
     degree_denominator = Den.degree()
@@ -1601,7 +1601,7 @@ def witness(Phi, check = True, name = 't', verbose = False):
 
             if verbose: tt1=time()
 
-            Nu = [N[T]([rel_trace(nsums, M_to_Nb(coe)) for coe in foo.coeffs()]) for foo in Nu] # in N
+            Nu = [N[T]([rel_trace(nsums, M_to_Nb(coe)) for coe in foo.coefficients(sparse=False)]) for foo in Nu] # in N
 
             if verbose: print("trace, compute trace: " + str(time()-tt))
             if verbose: tt =time()
