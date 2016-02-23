@@ -40,7 +40,7 @@ In any case, it is advisable to run at lest Sage 6.1.1 and apply the trac patch:
 from time import time
 from copy import copy
 import sage
-from sage.rings.arith import gcd, lcm
+from sage.arith.all import gcd, lcm
 from sage.rings.integer_ring import ZZ
 from sage.rings.rational_field import QQ
 from sage.rings.power_series_ring import PowerSeriesRing
