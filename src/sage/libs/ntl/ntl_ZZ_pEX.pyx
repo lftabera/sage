@@ -21,6 +21,8 @@ AUTHORS:
 #                  http://www.gnu.org/licenses/
 #*****************************************************************************
 
+from __future__ import division
+
 include "sage/ext/interrupt.pxi"
 include "sage/ext/stdsage.pxi"
 include 'misc.pxi'
@@ -42,7 +44,7 @@ from sage.libs.ntl.ntl_ZZ import unpickle_class_args
 #
 ##############################################################################
 
-cdef class ntl_ZZ_pEX:
+cdef class ntl_ZZ_pEX(object):
     r"""
     The class \class{ZZ_pEX} implements polynomials over finite ring extensions of $\Z / p\Z$.
 
@@ -106,7 +108,6 @@ cdef class ntl_ZZ_pEX:
         ## _new in your own code).                    ##
         ################################################
         if modulus is None and v is None: # we also check for v is None so that a user can specify the modulus by v.
-            ZZ_pEX_construct(&self.x)
             return
         if isinstance(modulus, ntl_ZZ_pEContext_class):
             self.c = <ntl_ZZ_pEContext_class>modulus
@@ -126,10 +127,6 @@ cdef class ntl_ZZ_pEX:
         else:
             raise ValueError, "modulus must not be None"
         self.c.restore_c()
-        ZZ_pEX_construct(&self.x)
-
-    def __dealloc__(self):
-        ZZ_pEX_destruct(&self.x)
 
     cdef ntl_ZZ_pEX _new(self):
         cdef ntl_ZZ_pEX r
@@ -341,7 +338,7 @@ cdef class ntl_ZZ_pEX:
         sig_off()
         return r
 
-    def __div__(ntl_ZZ_pEX self, ntl_ZZ_pEX other):
+    def __truediv__(ntl_ZZ_pEX self, ntl_ZZ_pEX other):
         """
         Compute quotient self / other, if the quotient is a polynomial.
         Otherwise an Exception is raised.
@@ -370,6 +367,9 @@ cdef class ntl_ZZ_pEX:
         if not divisible:
             raise ArithmeticError, "self (=%s) is not divisible by other (=%s)"%(self, other)
         return r
+
+    def __div__(self, other):
+        return self / other
 
     def __mod__(ntl_ZZ_pEX self, ntl_ZZ_pEX other):
         """
@@ -467,26 +467,37 @@ cdef class ntl_ZZ_pEX:
         import sage.groups.generic as generic
         return generic.power(self, n, ntl_ZZ_pEX([[1]],self.c))
 
-    def __cmp__(ntl_ZZ_pEX self, ntl_ZZ_pEX other):
+    def __richcmp__(ntl_ZZ_pEX self, other, int op):
         """
-        Decide whether or not self and other are equal.
+        Compare self to other.
 
-        EXAMPLES:
-        sage: c=ntl.ZZ_pEContext(ntl.ZZ_pX([1,1,1], 7))
-        sage: a = ntl.ZZ_pE([3,2], c)
-        sage: b = ntl.ZZ_pE([1,2], c)
-        sage: f = ntl.ZZ_pEX([a, b, b])
-        sage: g = ntl.ZZ_pEX([a, b, b, 0])
-        sage: f == g
-        True
-        sage: g = ntl.ZZ_pEX([a, b, a])
-        sage: f == g
-        False
+        EXAMPLES::
+
+            sage: c=ntl.ZZ_pEContext(ntl.ZZ_pX([1,1,1], 7))
+            sage: a = ntl.ZZ_pE([3,2], c)
+            sage: b = ntl.ZZ_pE([1,2], c)
+            sage: f = ntl.ZZ_pEX([a, b, b])
+            sage: g = ntl.ZZ_pEX([a, b, b, 0])
+            sage: f == g
+            True
+            sage: g = ntl.ZZ_pEX([a, b, a])
+            sage: f == g
+            False
+            sage: f == []
+            False
         """
         self.c.restore_c()
-        if ZZ_pEX_equal(self.x, other.x):
-            return 0
-        return -1
+
+        if op != Py_EQ and op != Py_NE:
+            raise TypeError("polynomials are not ordered")
+
+        cdef ntl_ZZ_pEX b
+        try:
+            b = <ntl_ZZ_pEX?>other
+        except TypeError:
+            b = ntl_ZZ_pEX(other, self.c)
+
+        return (op == Py_EQ) == (self.x == b.x)
 
     def is_zero(self):
         """
@@ -601,17 +612,16 @@ cdef class ntl_ZZ_pEX:
 
     def convert_to_pE(self, ntl_ZZ_pEContext_class cE):
         """
-
         Convert to a new ``ntl_ZZ_pEContext``.
 
         INPUT:
 
-            - ``cE`` -- a ``ntl_ZZ_pEContext`` object.
+        - ``cE`` -- a ``ntl_ZZ_pEContext`` object.
 
         OUTPUT:
 
-            - A new ``ntl_ZZ_pEX`` which is the same as ``self``, but considered
-              modulo a different ``pEContext`` (but the SAME polynomial).
+        - A new ``ntl_ZZ_pEX`` which is the same as ``self``, but considered
+          modulo a different ``pEContext`` (but the SAME polynomial).
 
         In order for this to make mathematical sense, the modulus `p = cE.get_pc()`
         should divide the modulus of ``self`` (in which case ``self`` is reduced
@@ -621,23 +631,24 @@ cdef class ntl_ZZ_pEX:
         extension `cE` should reduce mod `p` to the polynomial defining the
         class of ``self`` or viceversa.
 
-        EXAMPLES:
-        sage: c = ntl.ZZ_pEContext(ntl.ZZ_pX([3120, 0, 1], 5^5))
-        sage: d = ntl.ZZ_pEContext(ntl.ZZ_pX([-5, 0, 1], 3*5^6))
-        sage: a = ntl.ZZ_pE([2245, 64], c)
-        sage: b = ntl.ZZ_pE([2650, 1112], c)
-        sage: f = ntl.ZZ_pEX([a, b])
-        sage: g = f.convert_to_pE( d )
-        sage: g
-        [[2245 64] [2650 1112]]
-        sage: g.get_modulus_context()
-        NTL modulus [46870 0 1] (mod 46875)
-        sage: g^2
-        [[44880 6110] [805 35205] [33345 34225]]
-        sage: (f^2).convert_to_pE( d )
-        [[1130 2985] [805 830] [2095 2975]]
-        sage: ((f^2).convert_to_pE( d ) - g^2).convert_to_pE(c)
-        []
+        EXAMPLES::
+
+            sage: c = ntl.ZZ_pEContext(ntl.ZZ_pX([3120, 0, 1], 5^5))
+            sage: d = ntl.ZZ_pEContext(ntl.ZZ_pX([-5, 0, 1], 3*5^6))
+            sage: a = ntl.ZZ_pE([2245, 64], c)
+            sage: b = ntl.ZZ_pE([2650, 1112], c)
+            sage: f = ntl.ZZ_pEX([a, b])
+            sage: g = f.convert_to_pE( d )
+            sage: g
+            [[2245 64] [2650 1112]]
+            sage: g.get_modulus_context()
+            NTL modulus [46870 0 1] (mod 46875)
+            sage: g^2
+            [[44880 6110] [805 35205] [33345 34225]]
+            sage: (f^2).convert_to_pE( d )
+            [[1130 2985] [805 830] [2095 2975]]
+            sage: ((f^2).convert_to_pE( d ) - g^2).convert_to_pE(c)
+            []
         """
         cE.restore_c()
         cdef ntl_ZZ_pEX ans = ntl_ZZ_pEX.__new__(ntl_ZZ_pEX)
@@ -1148,7 +1159,7 @@ cdef class ntl_ZZ_pEX:
 
         c = ~self.leading_coefficient()
         m = self.degree()
-        if (m*(m-1)/2) % 2:
+        if (m*(m-1) // 2) % 2:
             c = -c
         return c*self.resultant(self.derivative())
 
@@ -1221,8 +1232,7 @@ cdef class ntl_ZZ_pEX:
 
         INPUT:
 
-            - `R`: an univariate polynomial ring over an absolute number field
-              `QQ[a]`.
+        - `R`: an univariate polynomial ring over an absolute number field `QQ[a]`.
 
         If `self` is an element in `ZZ[x]/(m, c(x))`. In order to make sense
         of this algorithm, the minimum polynomial of `a` should be congruent
@@ -1243,7 +1253,6 @@ cdef class ntl_ZZ_pEX:
             sage: f
             [[1 1] [1 1] [2 1] [] [0 2]]
             sage: N = NumberField(x^2+7,'a')
-
         """
         cdef ntl_ZZ_pX element
         lifted = []
