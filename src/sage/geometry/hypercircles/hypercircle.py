@@ -3117,8 +3117,14 @@ class Hypercircle():
         K_alpha_beta = Kalpha.extension(pol_beta, beta_name)
         NewK = K_alpha_beta.absolute_field(gamma_name)
         NewK_to_K_alpha_beta, K_alpha_beta_to_NewK = NewK.structure()
-        K_alpha_beta.register_coercion(NewK_to_K_alpha_beta)
-        NewK.register_coercion(K_alpha_beta_to_NewK)
+        try:
+            K_alpha_beta.register_coercion(NewK_to_K_alpha_beta)
+        except(AssertionError):
+            pass
+        try:
+            NewK.register_coercion(K_alpha_beta_to_NewK)
+        except(AssertionError):
+            pass
         alpha_in_NewK = K_alpha_beta_to_NewK(alpha)
         beta_in_NewK = K_alpha_beta_to_NewK(K_alpha_beta.gen())
         var_string = str(alpha) + beta_name +gamma_name+'0'
@@ -3127,9 +3133,15 @@ class Hypercircle():
         pol_alpha_over_beta = Kbeta['x'](str(pol_alpha_over_beta).replace(\
                                                      var_string+'1', beta_name))
         K_beta_alpha = Kbeta.extension(pol_alpha_over_beta, str(alpha))
-        K_beta_alpha.register_coercion( Kalpha.hom([K_beta_alpha.gen()]))
+        try:
+            K_beta_alpha.register_coercion( Kalpha.hom([K_beta_alpha.gen()]))
+        except(AssertionError):
+            pass
         if K_beta_alpha.absolute_degree() == Kalpha.degree():
-            Kalpha.register_coercion(K_beta_alpha.hom([Kalpha.gen()]))
+            try:
+                Kalpha.register_coercion(K_beta_alpha.hom([Kalpha.gen()]))
+            except(AssertionError):
+                pass
         gamma_in_alpha_beta = NewK_to_K_alpha_beta(gamma_name)
 
         #This is ugly!!
@@ -3139,10 +3151,22 @@ class Hypercircle():
                                K_beta_to_NewK)
         K_alpha_to_NewK = Kalpha.hom([alpha_in_NewK])
         #ugly coercions
-        K_beta_alpha.register_coercion(NewK_to_K_beta_alpha)
-        NewK.register_coercion(K_beta_to_NewK)
-        NewK.register_coercion(K_beta_alpha_to_NewK)
-        NewK.register_coercion(K_alpha_to_NewK)
+        try:
+            K_beta_alpha.register_coercion(NewK_to_K_beta_alpha)
+        except(AssertionError):
+            pass
+        try:
+            NewK.register_coercion(K_beta_to_NewK)
+        except(AssertionError):
+            pass
+        try:
+            NewK.register_coercion(K_beta_alpha_to_NewK)
+        except(AssertionError):
+            pass
+        try:
+            NewK.register_coercion(K_alpha_to_NewK)
+        except(AssertionError):
+            pass
 
         place2 = conjugate_pol(place2, K_alpha_to_NewK, NewK[t])
 
@@ -3725,7 +3749,10 @@ class Hypercircle():
         phi = self.K_alpha().hom([alphab])
         par_in_Kbeta_alpha = map(lambda x: conjugate_pol(x, phi,\
                                  Kbeta_alpha[self.t()]), self.parametrization())
-        Kbeta_alpha.register_coercion(phi)
+        try:
+            Kbeta_alpha.register_coercion(phi)
+        except(AssertionError):
+            pass
         m = [alphab**i for i in range(self.ambient_dimension())]
         m = map(lambda x: x.vector(), m)
         m = matrix(Kbeta_alpha, m).transpose()
