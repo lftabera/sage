@@ -172,7 +172,7 @@ def install_package(package=None, force=None):
         sage: install_package()
         doctest:...: DeprecationWarning: use installed_packages() to list all installed packages
         See http://trac.sagemath.org/16759 for details.
-        [...'atlas...'python...]
+        [...'arb...'python...]
         sage: install_package("autotools")
         Traceback (most recent call last):
         ...
@@ -195,7 +195,7 @@ def installed_packages():
     EXAMPLES::
 
         sage: installed_packages()
-        [...'atlas...'python...]
+        [...'arb...'python...]
 
     .. seealso::
 
@@ -296,10 +296,8 @@ def _package_lists_from_sage_output(package_type, local=False):
     Local check that all standard packages are installed::
 
         sage: from sage.misc.package import _package_lists_from_sage_output
-        sage: installed, not_installed = _package_lists_from_sage_output('standard',local=True)
-        sage: bool(not_installed)
-        False
-        sage: 'glpk' in installed
+        sage: installed, not_installed = _package_lists_from_sage_output('standard', local=True)
+        sage: 'pari' in installed
         True
     """
     installed     = []

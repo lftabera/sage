@@ -198,6 +198,9 @@ AUTHORS:
 - Vincent Delecroix (2014): cleaning, refactorisation, documentation from the
   old implementation in ``contfrac`` (:trac:`14567`).
 """
+# python3
+from __future__ import division
+
 from sage.structure.sage_object import SageObject
 from integer import Integer
 from infinity import Infinity
@@ -2057,7 +2060,7 @@ def check_and_reduce_pair(x1,x2=None):
 
     # check that y2 is not a pure power (in a very naive way!!)
     n2 = len(y2)
-    for i in xrange(1,(n2+2)/2):
+    for i in xrange(1, (n2 + 2) // 2):
         if n2 % i == 0 and y2[:-i] == y2[i:]:
             y2 = y2[:i]
             break
@@ -2189,6 +2192,11 @@ def continued_fraction_list(x, type="std", partial_convergents=False, bits=None,
         <type 'sage.rings.real_mpfr.RealLiteral'>
         sage: continued_fraction_list(a)
         [1, 1, 1, 2, 1, 4, 18, 1, 5, 2, 25037802, 7, 1, 3, 1, 28, 1, 8, 2]
+
+    Check that this works for arb elements (:trac:`20069`)::
+
+        sage: continued_fraction(RBF(e))
+        [2; 1, 2, 1, 1, 4, 1, 1, 6, 1, 1, 8, 1, 1, 10, 1, 1, 12]
     """
     from rational_field import QQ
 
@@ -2225,11 +2233,12 @@ def continued_fraction_list(x, type="std", partial_convergents=False, bits=None,
 
     cf = None
 
-    from sage.rings.real_mpfi import RealIntervalField, is_RealIntervalField
+    from sage.rings.real_arb import RealBallField
+    from sage.rings.real_mpfi import RealIntervalField, RealIntervalField_class
     from sage.rings.real_mpfr import RealLiteral
     if isinstance(x, RealLiteral):
         x = RealIntervalField(x.prec())(x)
-    if is_RealIntervalField(x.parent()):
+    if isinstance(x.parent(), (RealIntervalField_class, RealBallField)):
         cf = continued_fraction(rat_interval_cf_list(
                  x.lower().exact_rational(),
                  x.upper().exact_rational()))

@@ -751,13 +751,17 @@ class GenericProduct(CartesianProductPoset, GenericGrowthGroup):
                 'no common parent was found, and '
                 'splitting the factors was unsuccessful.' % (self, other, var))
 
-
+        # A wrapper around an iterator that stores additional intermediate data.
+        # This deviates slightly from the iterator protocol:
+        # At the end of the iteration the data is reset to None instead
+        # of raising a StopIteration.
         class it:
             def __init__(self, it):
                 self.it = it
                 self.var = None
                 self.factors = None
-            def next(self):
+
+            def next_custom(self):
                 try:
                     self.var, factors = next(self.it)
                     self.factors = tuple(factors)
@@ -772,24 +776,24 @@ class GenericProduct(CartesianProductPoset, GenericGrowthGroup):
         newS = []
         newO = []
 
-        S.next()
-        O.next()
+        S.next_custom()
+        O.next_custom()
         while S.var is not None or O.var is not None:
             if S.var is not None and S.var < O.var:
                 newS.extend(S.factors)
                 newO.extend(S.factors)
-                S.next()
+                S.next_custom()
             elif O.var is not None and S.var > O.var:
                 newS.extend(O.factors)
                 newO.extend(O.factors)
-                O.next()
+                O.next_custom()
             else:
                 SL, OL = pushout_univariate_factors(self, other, S.var,
                                                     S.factors, O.factors)
                 newS.extend(SL)
                 newO.extend(OL)
-                S.next()
-                O.next()
+                S.next_custom()
+                O.next_custom()
 
         assert(len(newS) == len(newO))
 
@@ -870,13 +874,14 @@ class GenericProduct(CartesianProductPoset, GenericGrowthGroup):
         is_lt_one = _is_lt_one_
 
 
-        def _repr_(self):
+        def _repr_(self, latex=False):
             r"""
             A representation string for this Cartesian product element.
 
             INPUT:
 
-            Nothing.
+            - ``latex`` -- (default: ``False``) a boolean. If set, then
+              LaTeX-output is returned.
 
             OUTPUT:
 
@@ -890,10 +895,38 @@ class GenericProduct(CartesianProductPoset, GenericGrowthGroup):
                 sage: cartesian_product([P, L], order='lex').an_element()._repr_()
                 'x^(1/2)*log(x)'
             """
-            s = '*'.join(repr(v) for v in self.value if not v.is_one())
+            if latex:
+                from sage.misc.latex import latex as latex_repr
+                f = latex_repr
+            else:
+                f = repr
+
+            mul = ' ' if latex else '*'
+            s = mul.join(f(v) for v in self.value if not v.is_one())
             if s == '':
                 return '1'
             return s
+
+
+        def _latex_(self):
+            r"""
+            A representation string for this Cartesian product element.
+
+            OUTPUT:
+
+            A string.
+
+            TESTS::
+
+                sage: from sage.rings.asymptotic.growth_group import GrowthGroup
+                sage: P = GrowthGroup('x^QQ')
+                sage: L = GrowthGroup('log(x)^ZZ')
+                sage: latex(cartesian_product([P, L], order='lex').an_element())  # indirect doctest
+                x^{\frac{1}{2}} \log\left(x\right)
+                sage: latex(GrowthGroup('QQ^n * n^QQ').an_element())  # indirect doctest
+                \left(\frac{1}{2}\right)^{n} n^{\frac{1}{2}}
+            """
+            return self._repr_(latex=True)
 
 
         def __pow__(self, exponent):

@@ -308,7 +308,7 @@ Arbitrary powers work as well; for example, we have
     instead. (See also the examples in
     :meth:`ExactTerm.rpow() <sage.rings.asymptotic.term_monoid.ExactTerm.rpow>`
     for a detailed explanation.)
-    Another way is to use a larger coefficent ring::
+    Another way is to use a larger coefficient ring::
 
         sage: M_QQ.<n> = AsymptoticRing(growth_group='QQ^n * n^QQ', coefficient_ring=QQ)
         sage: (1/2)^n
@@ -367,7 +367,7 @@ The :class:`AsymptoticRing` fully supports
     Asymptotic Ring <z^QQ> over Rational Field
 
 Here, the coefficient ring was extended to allow `1/2` as a
-coefficent. Another example is
+coefficient. Another example is
 ::
 
     sage: C.<c> = AsymptoticRing(growth_group='c^ZZ', coefficient_ring=ZZ['e'])
@@ -1009,13 +1009,14 @@ class AsymptoticExpansion(CommutativeAlgebraElement):
         self._summands_.merge(reverse=True)
 
 
-    def _repr_(self):
+    def _repr_(self, latex=False):
         r"""
         A representation string for this asymptotic expansion.
 
         INPUT:
 
-        Nothing.
+        - ``latex`` -- (default: ``False``) a boolean. If set, then
+          LaTeX-output is returned.
 
         OUTPUT:
 
@@ -1029,12 +1030,63 @@ class AsymptoticExpansion(CommutativeAlgebraElement):
             sage: (5*x^2-12*x) * (x^3+O(x))  # indirect doctest
             5*x^5 - 12*x^4 + O(x^3)
         """
-        s = ' + '.join(repr(elem) for elem in
+        if latex:
+            from sage.misc.latex import latex as latex_repr
+            f = latex_repr
+        else:
+            f = repr
+        s = ' + '.join(f(elem) for elem in
                        self.summands.elements_topological(reverse=True))
         s = s.replace('+ -', '- ')
         if not s:
             return '0'
         return s
+
+
+    def _latex_(self):
+        r"""
+        A LaTeX-representation string for this asymptotic expansion.
+
+        OUTPUT:
+
+        A string.
+
+        TESTS::
+
+            sage: R.<x> = AsymptoticRing(growth_group='x^ZZ', coefficient_ring=ZZ)
+            sage: latex((5*x^2+12*x) * (x^3+O(x)))  # indirect doctest
+            5 x^{5} + 12 x^{4} + O\!\left(x^{3}\right)
+            sage: latex((5*x^2-12*x) * (x^3+O(x)))  # indirect doctest
+            5 x^{5} - 12 x^{4} + O\!\left(x^{3}\right)
+        """
+        return self._repr_(latex=True)
+
+
+    def show(self):
+        r"""
+        Pretty-print this asymptotic expansion.
+
+        OUTPUT:
+
+        Nothing, the representation is printed directly on the
+        screen.
+
+        EXAMPLES::
+
+            sage: A.<x> = AsymptoticRing('QQ^x * x^QQ * log(x)^QQ', SR.subring(no_variables=True))
+            sage: (pi/2 * 5^x * x^(42/17) - sqrt(euler_gamma) * log(x)^(-7/8)).show()
+            <html><script type="math/tex">\newcommand{\Bold}[1]{\mathbf{#1}}\frac{1}{2} \, \pi
+            5^{x} x^{\frac{42}{17}} - \sqrt{\gamma_E} \log\left(x\right)^{-\frac{7}{8}}</script></html>
+
+        TESTS::
+
+            sage: A.<x> = AsymptoticRing('(e^x)^QQ * x^QQ', SR.subring(no_variables=True))
+            sage: (zeta(3) * (e^x)^(-1/2) * x^42).show()
+            <html><script type="math/tex">\newcommand{\Bold}[1]{\mathbf{#1}}\zeta(3)
+            \left(e^{x}\right)^{-\frac{1}{2}} x^{42}</script></html>
+        """
+        from sage.repl.rich_output.pretty_print import pretty_print
+        pretty_print(self)
 
 
     def _add_(self, other):
@@ -3052,6 +3104,82 @@ class AsymptoticExpansion(CommutativeAlgebraElement):
         return tuple(v for v, _ in groupby(vars))
 
 
+    def _singularity_analysis_(self, var, zeta, precision=None):
+        r"""
+        Return the asymptotic growth of the coefficients of some
+        generating function having this singular expansion around `\zeta`.
+
+        INPUT:
+
+        - ``var`` -- a string, the variable for the growth of the coefficients,
+          or the generator of an asymptotic ring.
+
+        - ``zeta`` -- location of the singularity
+
+        - ``precision`` -- (default: ``None``) an integer. If ``None``, then
+          the default precision of the parent of this expansion is used.
+
+        OUTPUT:
+
+        An asymptotic expansion in ``var``.
+
+        EXAMPLES::
+
+            sage: C.<T> = AsymptoticRing('T^QQ', QQ)
+            sage: ex = 2 - 2*T^(-1/2) + 2*T^(-1) - 2*T^(-3/2) + O(T^(-2))
+            sage: ex._singularity_analysis_('n', 1/4, precision=2)
+            1/sqrt(pi)*4^n*n^(-3/2) - 9/8/sqrt(pi)*4^n*n^(-5/2) + O(4^n*n^(-3))
+
+        The parameter ``var`` can also be the generator of an asymptotic
+        ring::
+
+            sage: A.<n> = AsymptoticRing('n^QQ', QQ)
+            sage: ex._singularity_analysis_(n, 1/4, precision=2)
+            1/sqrt(pi)*4^n*n^(-3/2) - 9/8/sqrt(pi)*4^n*n^(-5/2) + O(4^n*n^(-3))
+
+        If the parameter ``precision`` is omitted, the default precision
+        of the parent of this expansion is used. ::
+
+            sage: C.<T> = AsymptoticRing('T^QQ', QQ, default_prec=1)
+            sage: ex = 2 - 2*T^(-1/2) + 2*T^(-1) - 2*T^(-3/2) + O(T^(-2))
+            sage: ex._singularity_analysis_('n', 1/4)
+            1/sqrt(pi)*4^n*n^(-3/2)  + O(4^n*n^(-5/2))
+
+        .. SEEALSO::
+
+            :meth:`AsymptoticRing.coefficients_of_generating_function`
+
+        .. WARNING::
+
+            Once singular expansions around points other than infinity
+            are implemented (:trac:`20050`), this method will be
+            renamed to ``singularity_analysis``, the parameter
+            ``zeta`` will be dropped (as it will be part of the
+            singular expansion) and expansions around infinity will no
+            longer be accepted.
+        """
+        from misc import NotImplementedOZero
+        OZeroEncountered = False
+
+        if precision is None:
+            precision = self.parent().default_prec
+
+        result = 0
+        for s in self.summands:
+            try:
+                contribution = s._singularity_analysis_(
+                    var=var, zeta=zeta,
+                    precision=precision)
+            except NotImplementedOZero:
+                OZeroEncountered = True
+            else:
+                result += contribution
+
+        if OZeroEncountered and result.is_exact():
+            raise NotImplementedOZero(self)
+        return result
+
+
 class AsymptoticRing(Algebra, UniqueRepresentation):
     r"""
     A ring consisting of :class:`asymptotic expansions <AsymptoticExpansion>`.
@@ -3997,6 +4125,13 @@ class AsymptoticRing(Algebra, UniqueRepresentation):
             ....:    'n', precision=5))
             True
 
+        .. WARNING::
+
+            Once singular expansions around points other than infinity
+            are implemented (:trac:`20050`), the output in the case
+            ``return_singular_expansions`` will change to return singular
+            expansions around the singularities.
+
         TESTS::
 
             sage: def f(z):
@@ -4008,15 +4143,14 @@ class AsymptoticRing(Algebra, UniqueRepresentation):
             which means 0 for sufficiently large n.
         """
         from sage.symbolic.ring import SR
-        from sage.rings.integer_ring import ZZ
-        from asymptotic_expansion_generators import asymptotic_expansions
         from misc import NotImplementedOZero
 
         singular_expansions = {}
 
         OZeroEncountered = False
 
-        A = AsymptoticRing('T^QQ * log(T)^QQ', coefficient_ring=SR, default_prec=precision)
+        A = AsymptoticRing('T^QQ * log(T)^QQ', coefficient_ring=SR,
+                           default_prec=precision)
         T = A.gen()
 
         result = A.zero()
@@ -4024,15 +4158,14 @@ class AsymptoticRing(Algebra, UniqueRepresentation):
             singular_expansion = A(function((1-1/T)*singularity))
             singular_expansions[singularity] = singular_expansion
 
-            for s in singular_expansion.summands:
-                try:
-                    contribution = s._singularity_analysis_(
+            try:
+                contribution = singular_expansion._singularity_analysis_(
                         var='Z', zeta=singularity,
                         precision=precision).subs(Z=self.gen())
-                except NotImplementedOZero:
-                    OZeroEncountered = True
-                else:
-                    result += contribution
+            except NotImplementedOZero:
+                OZeroEncountered = True
+            else:
+                result += contribution
 
         if OZeroEncountered and result.is_exact():
             raise NotImplementedOZero(self)

@@ -1197,7 +1197,7 @@ class RijndaelGF(SageObject):
             raise TypeError(msg)
 
         def add_cols(col1, col2):
-            return map(lambda (x,y): x + y, zip(col1, col2))
+            return [x + y for x, y in zip(col1, col2)]
 
         key_cols = []
         for i in range(self._Nb * (self._Nr + 1)):
@@ -1442,8 +1442,8 @@ class RijndaelGF(SageObject):
 
     def compose(self, f, g, algorithm='encrypt', f_attr=None, g_attr=None):
         r"""
-        Returns a ``Round_Component_Poly_Constr`` object corresponding to
-        `g \circ f` or the polnyomial output of this object's ``__call__``
+        Return a ``Round_Component_Poly_Constr`` object corresponding to
+        `g \circ f` or the polynomial output of this object's ``__call__``
         method.
 
         INPUT:

@@ -499,7 +499,7 @@ def HughesPlane(q2, check=True):
     while `D_{0,70}`, `D_{1,59}` and `D_{10,57}` are not concurrent::
 
         sage: blocks = H.blocks()
-        sage: line = lambda p,q: (b for b in blocks if p in b and q in b).next()
+        sage: line = lambda p,q: next(b for b in blocks if p in b and q in b)
 
         sage: b_0_1 = line(0, 1)
         sage: b_1_10 = line(1, 10)
@@ -551,8 +551,8 @@ def HughesPlane(q2, check=True):
     if q2%2 == 0:
         raise EmptySetError("No Hughes plane of even order exists.")
     q = q2.sqrt()
-    K = FiniteField(q2, prefix='x', conway=True)
-    F = FiniteField(q, prefix='y', conway=True)
+    K = FiniteField(q2, prefix='x')
+    F = FiniteField(q, prefix='y')
     A = q3_minus_one_matrix(F)
     A = A.change_ring(K)
     m = K.list()
@@ -949,7 +949,7 @@ def Hadamard3Design(n):
 
     REFERENCES:
 
-    .. [CvL] P. Cameron, J. H. van Lint, Designs, graphs, codes and
+    .. [CvL] \P. Cameron, J. H. van Lint, Designs, graphs, codes and
       their links, London Math. Soc., 1991.
     """
     if n == 1 or n == 4:
