@@ -44,7 +44,7 @@ from c_graph cimport CGraphBackend
 from sage.data_structures.bitset cimport FrozenBitset
 from libc.stdint cimport uint32_t
 include 'sage/data_structures/bitset.pxi'
-from libc.stdlib cimport calloc,free
+include "cysignals/memory.pxi"
 
 cdef class StaticSparseCGraph(CGraph):
     """
@@ -65,12 +65,19 @@ cdef class StaticSparseCGraph(CGraph):
 
             sage: from sage.graphs.base.static_sparse_backend import StaticSparseCGraph
             sage: g = StaticSparseCGraph(graphs.PetersenGraph())
+
+        Check that the digraph methods are working (see :trac:`20253`)::
+
+            sage: G = DiGraph([(0,1),(1,0)])
+            sage: G2 = G.copy(immutable=True)
+            sage: G2.is_strongly_connected()
+            True
         """
         cdef int i, j, tmp
-        has_labels = any(not l is None for _,_,l in G.edge_iterator())
+        has_labels = any(l is not None for _,_,l in G.edge_iterator())
         self._directed = G.is_directed()
 
-        init_short_digraph(self.g, G, edge_labelled = has_labels)
+        init_short_digraph(self.g, G, edge_labelled=has_labels)
         if self._directed:
             init_reverse(self.g_rev,self.g)
 
@@ -78,10 +85,11 @@ cdef class StaticSparseCGraph(CGraph):
         elif not G.has_loops():
             self.number_of_loops = NULL
         else:
-            self.number_of_loops = <int *> calloc(sizeof(int), self.g.n)
-            if self.number_of_loops == NULL:
+            try:
+                self.number_of_loops = <int *>check_calloc(self.g.n, sizeof(int))
+            except MemoryError:
                 free_short_digraph(self.g)
-                raise MemoryError
+                raise
             for i in range(self.g.n):
                 for tmp in range(out_degree(self.g,i)):
                     j = self.g.neighbors[i][tmp]
@@ -91,8 +99,12 @@ cdef class StaticSparseCGraph(CGraph):
                         break
 
         # Defining the meaningless set of 'active' vertices. Because of CGraph.
+        # As well as num_verts and num_edges
         bitset_init(self.active_vertices,  self.g.n+1)
         bitset_set_first_n(self.active_vertices, self.g.n)
+
+        self.num_verts = self.g.n
+        self.num_arcs = self.g.m
 
     def __dealloc__(self):
         r"""
@@ -105,7 +117,7 @@ cdef class StaticSparseCGraph(CGraph):
         """
         bitset_free(self.active_vertices)
         free_short_digraph(self.g)
-        free(self.number_of_loops)
+        sig_free(self.number_of_loops)
         if self.g_rev != NULL:
             free_short_digraph(self.g_rev)
 

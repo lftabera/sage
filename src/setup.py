@@ -24,7 +24,7 @@ def excepthook(*exc):
 
     try:
         logfile = os.path.join(os.environ['SAGE_LOGS'],
-                "sage-%s.log" % os.environ['SAGE_VERSION'])
+                "sagelib-%s.log" % os.environ['SAGE_VERSION'])
     except:
         pass
     else:
@@ -70,12 +70,6 @@ include_dirs = sage_include_directories(use_sources=True)
 # and disappears from the default flags if the user has set CFLAGS.
 extra_compile_args = [ "-fno-strict-aliasing" ]
 extra_link_args = [ ]
-
-# comment these four lines out to turn on warnings from gcc
-import distutils.sysconfig
-NO_WARN = True
-if NO_WARN and distutils.sysconfig.get_config_var('CC').startswith("gcc"):
-    extra_compile_args.append('-w')
 
 DEVEL = False
 if DEVEL:
@@ -324,6 +318,7 @@ def execute_list_of_commands(command_list):
 ########################################################################
 
 from distutils.command.build_ext import build_ext
+from distutils.command.install import install
 from distutils.dep_util import newer_group
 from distutils import log
 
@@ -577,7 +572,6 @@ def run_cythonize():
     version_file = os.path.join(os.path.dirname(__file__), '.cython_version')
     version_stamp = '\n'.join([
         'cython version: ' + str(Cython.__version__),
-        'NTL dependencies fixed: True',
         'debug: ' + str(debug),
         'profile: ' + str(profile),
     ""])
@@ -635,6 +629,22 @@ print('Finished cleaning, time: %.2f seconds.' % (time.time() - t))
 
 
 #########################################################
+### Install also Jupyter kernel spec
+#########################################################
+
+# We cannot just add the installation of the kernel spec to data_files
+# since the file is generated, not copied.
+class sage_install(install):
+    def run(self):
+        install.run(self)
+        self.install_kernel_spec()
+
+    def install_kernel_spec(self):
+        from sage.repl.ipython_kernel.install import SageKernelSpec
+        SageKernelSpec.update()
+
+
+#########################################################
 ### Distutils
 #########################################################
 
@@ -648,6 +658,5 @@ code = setup(name = 'sage',
       packages    = python_packages,
       data_files  = python_data_files,
       scripts = [],
-      cmdclass = { 'build_ext': sage_build_ext },
+      cmdclass = dict(build_ext=sage_build_ext, install=sage_install),
       ext_modules = ext_modules)
-
